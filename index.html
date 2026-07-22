@@ -6251,6 +6251,77 @@ window.roboSetDe=function(v){ROBO_UI.de=v;roboUISave();renderRobo()};
 window.roboSetAte=function(v){ROBO_UI.ate=v;roboUISave();renderRobo()};
 window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
 window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
+// ---- CAPACIDADE PRODUTIVA POR DISCIPLINA (efetivo do mes x HH x metas) ----
+var PROD_PARAMS=lsg('cbsi-v15-prod-params',{diasRef:24,pintM2Dia:6.94,andM3HH:1.8,eletroKgHH:10,custoHH:45});
+window.prodSetParam=function(k,v){PROD_PARAMS[k]=+String(v).replace(',','.');lss('cbsi-v15-prod-params',PROD_PARAMS);renderRobo();try{fixMetricasJornada()}catch(e){}};
+var CARGOS_PINT=['PINTOR INDUSTRIAL I','PINTOR JATISTA','PINTOR ESCALADOR I','PINTOR LETRISTA'];
+var CARGOS_AND=['MONTADOR ANDAIMES','LIDER ANDAIME I'];
+var CARGOS_ELETRO=['CALDEIREIRO I','SOLDADOR RX','MECANICO MONTADOR I','ELETRICISTA MANUTENCAO I','LIDER MECANICA I'];
+function efetAtivos(){return ROBO_EFET.filter(function(e){return normTxt(e.st)==='ATIVO'})}
+function jornadaHDia(){try{return getJornadaAtiva().hDia||8.73}catch(e){return 8.73}}
+function capDisciplinas(FA){
+  var ativos=efetAtivos(),hDia=jornadaHDia(),dias=PROD_PARAMS.diasRef;
+  function grupo(nome,cargos,unid,fator,obs){
+    var eq=ativos.filter(function(e){return cargos.indexOf(normTxt(e.cargo))>=0});
+    var hhCap=eq.length*hDia*dias;
+    var hhAp=0;FA.regs.forEach(function(l){if(cargos.indexOf(normTxt(l.cargo))>=0)hhAp+=l.hn+l.he50+l.he100+l.he150});
+    var prodCap=(unid==='m2')?eq.length*PROD_PARAMS.pintM2Dia*dias:hhCap*fator;
+    var prodAp=hhCap>0?prodCap*(hhAp/hhCap):0;
+    return{nome:nome,n:eq.length,hhCap:hhCap,hhAp:hhAp,util:hhCap>0?hhAp/hhCap*100:0,unid:(unid==='m2'?'m\u00b2':unid==='m3'?'m\u00b3':unid),prodCap:prodCap,prodAp:prodAp,obs:obs};
+  }
+  var g=[
+    grupo('\ud83c\udfa8 Pintura (Industrial+Jatista+Escalador+Letrista)',CARGOS_PINT,'m2',0,'meta '+PROD_PARAMS.pintM2Dia+' m\u00b2/pessoa\u00b7dia'),
+    grupo('\ud83c\udfd7\ufe0f Andaimes (Montador+L\u00edder)',CARGOS_AND,'m3',PROD_PARAMS.andM3HH,'meta '+PROD_PARAMS.andM3HH+' m\u00b3/HH (mercado 1,2\u20132,2)'),
+    grupo('\u2699\ufe0f Eletromec\u00e2nica (Cald+Sold+Mec+Eletr+L\u00edd.Mec)',CARGOS_ELETRO,'kg',PROD_PARAMS.eletroKgHH,'meta '+PROD_PARAMS.eletroKgHH+' kg/HH (mercado 8\u201312)')
+  ];
+  var usados=CARGOS_PINT.concat(CARGOS_AND,CARGOS_ELETRO);
+  var demais=ativos.filter(function(e){return usados.indexOf(normTxt(e.cargo))<0});
+  var hhApD=0;FA.regs.forEach(function(l){if(usados.indexOf(normTxt(l.cargo))<0)hhApD+=l.hn+l.he50+l.he100+l.he150});
+  g.push({nome:'\ud83d\udc77 Apoio / Lideran\u00e7a / ADM (demais fun\u00e7\u00f5es)',n:demais.length,hhCap:demais.length*hDia*dias,hhAp:hhApD,util:demais.length?hhApD/(demais.length*hDia*dias)*100:0,unid:'HH',prodCap:0,prodAp:0,obs:'suporte \u2014 medido em HH'});
+  return{grupos:g,ativos:ativos.length,afast:ROBO_EFET.length-ativos.length,hDia:hDia,dias:dias};
+}
+function capacidadeHTML(FA,con){
+  var C=capDisciplinas(FA);
+  var fm2=function(x){return (Math.round(x*10)/10).toLocaleString('pt-BR')};
+  return '<div class="cd" style="border:1px solid rgba(0,196,140,.3);margin-bottom:8px">'
+   +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px">'
+   +'<div><div style="font-size:11px;font-weight:800;color:var(--gn)">\ud83d\udcd0 CAPACIDADE PRODUTIVA POR DISCIPLINA \u2014 Efetivo do m\u00eas \u00d7 HH apuradas</div>'
+   +'<div style="font-size:8px;color:var(--dm)">Efetivo ativo: <b>'+C.ativos+'</b> (+'+C.afast+' f\u00e9rias/afastados) \u00b7 Jornada '+C.hDia.toFixed(2)+'h \u00b7 Refer\u00eancia <input type="number" min="20" max="31" value="'+PROD_PARAMS.diasRef+'" onchange="prodSetParam(\'diasRef\',this.value)" style="width:44px;font-size:9px;padding:1px"> dias/m\u00eas \u00b7 HH apuradas do per\u00edodo selecionado acima</div></div>'
+   +'<div style="font-size:8px;color:var(--dm)">Metas: pintura <input value="'+PROD_PARAMS.pintM2Dia+'" onchange="prodSetParam(\'pintM2Dia\',this.value)" style="width:46px;font-size:9px;padding:1px"> m\u00b2/pes\u00b7dia \u00b7 andaime <input value="'+PROD_PARAMS.andM3HH+'" onchange="prodSetParam(\'andM3HH\',this.value)" style="width:40px;font-size:9px;padding:1px"> m\u00b3/HH \u00b7 eletromec. <input value="'+PROD_PARAMS.eletroKgHH+'" onchange="prodSetParam(\'eletroKgHH\',this.value)" style="width:40px;font-size:9px;padding:1px"> kg/HH</div></div>'
+   +'<table style="width:100%;font-size:9px;border-collapse:collapse">'
+   +'<tr style="background:var(--c1)"><th style="text-align:left;padding:4px">Disciplina</th><th>Efetivo</th><th>HH capacidade</th><th>HH apuradas</th><th>Utiliza\u00e7\u00e3o</th><th>Capacidade produ\u00e7\u00e3o</th><th>Produ\u00e7\u00e3o p/ HH apuradas</th></tr>'
+   +C.grupos.map(function(gp){
+      var cor=gp.util>=85?'var(--gn)':gp.util>=60?'var(--ca)':'var(--rd)';
+      return '<tr style="border-bottom:1px solid var(--bd)" title="'+gp.obs+'">'
+       +'<td style="padding:4px;text-align:left"><b>'+gp.nome+'</b><div style="font-size:7px;color:var(--dm)">'+gp.obs+'</div></td>'
+       +'<td style="text-align:center;font-weight:700">'+gp.n+'</td>'
+       +'<td style="text-align:right">'+fm2(gp.hhCap)+' HH</td>'
+       +'<td style="text-align:right;font-weight:700">'+fm2(gp.hhAp)+' HH</td>'
+       +'<td style="text-align:center;font-weight:800;color:'+cor+'">'+(Math.round(gp.util*10)/10).toLocaleString('pt-BR')+'%</td>'
+       +'<td style="text-align:right">'+(gp.prodCap?fm2(gp.prodCap)+' '+gp.unid:'\u2014')+'</td>'
+       +'<td style="text-align:right;color:var(--cs);font-weight:700">'+(gp.prodAp?fm2(gp.prodAp)+' '+gp.unid:'\u2014')+'</td></tr>';
+    }).join('')
+   +'</table>'
+   +'<div style="font-size:7px;color:var(--dm);margin-top:4px">Pintura: capacidade = efetivo \u00d7 meta \u00d7 dias (equivale a '+(Math.round(PROD_PARAMS.pintM2Dia/jornadaHDia()*100)/100)+' m\u00b2/HH \u2014 coerente com o \u00edndice 0,8 do painel de produtividade). Andaimes e Eletromec\u00e2nica: capacidade = HH \u00d7 meta. Utiliza\u00e7\u00e3o = HH apuradas \u00f7 HH capacidade.</div>'
+   +'</div>';
+}
+function fixMetricasJornada(){
+  var pg=document.getElementById('p-ponto');if(!pg)return;
+  var ativos=efetAtivos(),hDia=jornadaHDia(),dias=PROD_PARAMS.diasRef;
+  var nPint=ativos.filter(function(e){return CARGOS_PINT.indexOf(normTxt(e.cargo))>=0}).length;
+  var capHH=Math.round(ativos.length*hDia*dias),capPin=Math.round(nPint*hDia*dias);
+  var prodM2=Math.round(nPint*PROD_PARAMS.pintM2Dia*dias),custo=Math.round(capHH*PROD_PARAMS.custoHH);
+  var fm=function(x){return x.toLocaleString('pt-BR')};
+  pg.querySelectorAll('.kp').forEach(function(kp){
+    var kl=kp.querySelector('.kl'),kv=kp.querySelector('.kv'),ks=kp.querySelector('.ks');
+    if(!kl||!kv||!ks)return;var t=normTxt(kl.textContent);
+    if(t==='CAP HH/MES'){kv.textContent=fm(capHH);ks.textContent=ativos.length+' ativos \u00d7 '+dias+' dias (ref.)'}
+    else if(t==='CAP PIN HH'){kv.textContent=fm(capPin);ks.textContent=nPint+' pintores \u00d7 '+hDia.toFixed(1)+'h \u00d7 '+dias+'d'}
+    else if(t.indexOf('PRODUCAO M')===0){kv.textContent=fm(prodM2);ks.textContent='meta '+PROD_PARAMS.pintM2Dia+' m\u00b2/pessoa\u00b7dia \u00d7 '+dias+'d'}
+    else if(t==='CUSTO HH'){kv.textContent='R$ '+fm(custo);ks.textContent='estimado (R$'+PROD_PARAMS.custoHH+'/HH \u00d7 capacidade)'}
+  });
+}
+window.fixMetricasJornada=fixMetricasJornada;
 function roboConsolida(ref){
   var lista=Array.isArray(ref)?ref:(ref?[ref]:null);
   var fil=ROBO_LANC.filter(function(l){return !lista||lista.indexOf(l.ref)>=0});
@@ -6757,6 +6828,7 @@ function renderRobo(){
   +'<div class="g g5" style="margin-bottom:8px">'
   +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')+kpi('HE 50%',h2hm(tot.he50),'var(--ca)')+kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
   +'</div>'
+  +capacidadeHTML(FA,con)
   // barra de ações
   +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
   +'<span style="font-size:9px;font-weight:700;color:var(--dm)">APURAÇÃO:</span>'
@@ -6833,7 +6905,7 @@ window.roboUpload=function(inp){
 // monkey-patch: sempre que a aba Espelho Ponto re-renderizar, o Robô volta junto
 if(typeof window.renderPonto==='function'){
   var _rpOrig=window.renderPonto;
-  window.renderPonto=function(){_rpOrig();try{renderRobo()}catch(e){console.warn('Robo:',e)}};
+  window.renderPonto=function(){_rpOrig();try{fixMetricasJornada()}catch(e){}try{renderRobo()}catch(e){console.warn('Robo:',e)}};
 }
 
 // ---------------------------------------------------------------------------
@@ -6905,7 +6977,10 @@ try{
   }
 }catch(e){console.warn('Aba andaimes:',e)}
 
+// propaga a referência de dias ao CFG global (Motor/Planejamento/Índices)
+try{if(typeof CFG!=='undefined'&&CFG){CFG.diasUteis=PROD_PARAMS.diasRef}}catch(e){}
 // primeira renderização
+try{fixMetricasJornada()}catch(e){}
 try{renderRobo()}catch(e){console.warn('Robo init:',e)}
 try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
 try{renderAndaimes()}catch(e){console.warn('Andaimes init:',e)}
