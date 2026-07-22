@@ -6283,7 +6283,16 @@ function roboDesfazerBM(){
 // ---------------------------------------------------------------------------
 // GOOGLE DRIVE (leitura automática — requer pasta pública + chave de API)
 // ---------------------------------------------------------------------------
-var DRIVE_CFG=lsg('cbsi-v15-drive-cfg',{apiKey:'',pastas:{ponto:'',rdc:'1EDi-R7ene43Qn3FQUCHNx8MQWKnab1z8',bms:'',pint:'',andaimes:''},status:{}});
+var DRIVE_PASTAS_PADRAO={ // IDs reais mapeados da pasta oficial CBSI (Mapa das pastas Rede)
+  raiz:'1EDi-R7ene43Qn3FQUCHNx8MQWKnab1z8',
+  ponto:'1q2VrRLWFhnIJD1ncysoAYm5p5h0Dteir',
+  rdc:'17IX3i3IMTcdr3iDvC4wKvHetGSodkrs9',
+  bms:'1xhuYRj1l65d3SabUpFES26AnwtnZEkZV',
+  pint:'1R9vQJ1swO73sa2CySX0hdifEBx-aECcl',
+  andaimes:'1s9R7Wc1Sjofu9SNMAK1idd9Kv8tNquQm'};
+var DRIVE_CFG=lsg('cbsi-v15-drive-cfg',{apiKey:'',pastas:{},status:{},autoMin:10});
+Object.keys(DRIVE_PASTAS_PADRAO).forEach(function(k){if(!DRIVE_CFG.pastas[k])DRIVE_CFG.pastas[k]=DRIVE_PASTAS_PADRAO[k]});
+if(DRIVE_CFG.autoMin==null)DRIVE_CFG.autoMin=10;
 function driveSave(){lss('cbsi-v15-drive-cfg',DRIVE_CFG)}
 function driveList(folderId){
   var u='https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("'"+folderId+"' in parents and trashed=false")+'&fields=files(id,name,mimeType,modifiedTime,size)&pageSize=100&key='+encodeURIComponent(DRIVE_CFG.apiKey);
@@ -6293,6 +6302,72 @@ function driveDownload(fileId){
   var u='https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&key='+encodeURIComponent(DRIVE_CFG.apiKey);
   return fetch(u).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer()});
 }
+// lista recursiva (desce em subpastas até profundidade 2 — ex.: BMS/2026/08 - AGOSTO)
+function driveListRec(folderId,depth){
+  return driveList(folderId).then(function(files){
+    var subs=files.filter(function(f){return f.mimeType==='application/vnd.google-apps.folder'});
+    var arquivos=files.filter(function(f){return f.mimeType!=='application/vnd.google-apps.folder'});
+    if(!depth||!subs.length)return arquivos;
+    var seq=Promise.resolve(arquivos);
+    subs.forEach(function(sf){
+      seq=seq.then(function(acc){
+        return driveListRec(sf.id,depth-1).then(function(fs){
+          fs.forEach(function(f){f._pasta=(sf.name||'')+(f._pasta?'/'+f._pasta:'')});
+          return acc.concat(fs);
+        }).catch(function(){return acc});
+      });
+    });
+    return seq;
+  });
+}
+// monitor de todas as pastas mapeadas (roda no botão e no automático)
+function driveMonitor(){
+  if(!DRIVE_CFG.apiKey)return Promise.resolve();
+  var chaves=['ponto','rdc','bms','pint','andaimes'];
+  var seq=Promise.resolve();
+  chaves.forEach(function(ch){
+    seq=seq.then(function(){
+      return driveListRec(DRIVE_CFG.pastas[ch],2).then(function(files){
+        DRIVE_CFG.status[ch]={quando:new Date().toLocaleString('pt-BR'),qtde:files.length,
+          ult:files.slice().sort(function(a,b){return (b.modifiedTime||'')<(a.modifiedTime||'')?-1:1})[0]};
+        driveSave();
+        var el=document.getElementById('drvMon-'+ch);
+        if(el)el.textContent='✅ '+files.length+' arquivo(s)'+(DRIVE_CFG.status[ch].ult?(' · último: '+DRIVE_CFG.status[ch].ult.name):'');
+        if(ch==='ponto')drivePontoAuto(files);
+      }).catch(function(e){
+        var el=document.getElementById('drvMon-'+ch);
+        if(el)el.textContent='🔒 '+e.message;
+      });
+    });
+  });
+  return seq;
+}
+// processa automaticamente PDFs novos da pasta Ponto
+function drivePontoAuto(files){
+  var pdfs=(files||[]).filter(function(f){return /pdf$/i.test(f.name)||f.mimeType==='application/pdf'});
+  var st=document.getElementById('roboStatus');
+  var seq=Promise.resolve(),novos=0;
+  pdfs.forEach(function(f){
+    if(ROBO_ARQS.some(function(a){return a.nome===f.name}))return;
+    novos++;
+    seq=seq.then(function(){
+      if(st)st.textContent='⬇️ Drive: baixando '+f.name+'…';
+      return driveDownload(f.id).then(function(buf){
+        return roboProcessarPdf(new File([buf],f.name,{type:'application/pdf'}),st);
+      }).catch(function(e){console.warn('Drive ponto:',f.name,e)});
+    });
+  });
+  if(novos)seq.then(function(){renderRobo();rtoast('☁️ Robô de Ponto: '+novos+' PDF(s) novos do Drive processados')});
+}
+var _driveTimer=null;
+function driveAutoStart(){
+  if(_driveTimer)clearInterval(_driveTimer);
+  if(DRIVE_CFG.apiKey&&DRIVE_CFG.autoMin>0){
+    _driveTimer=setInterval(function(){driveMonitor()},DRIVE_CFG.autoMin*60000);
+    setTimeout(function(){driveMonitor()},4000);
+  }
+}
+window.driveMonitor=driveMonitor;window.driveAutoStart=driveAutoStart;
 function driveSync(chave){
   var fid=DRIVE_CFG.pastas[chave];
   var st=document.getElementById('drvSt-'+chave);
@@ -6387,11 +6462,13 @@ function renderRobo(){
   +'<div style="font-size:8px;color:var(--dm);margin-top:4px">Cadastro de Efetivos ativo: <b>'+ROBO_EFET.length+'</b> colaboradores · alterações do De×Para são salvas automaticamente.</div></div>'
   +'<div><div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:4px">📂 ARQUIVOS PROCESSADOS ('+ROBO_ARQS.length+')</div>'
   +'<div style="max-height:150px;overflow:auto">'+(ROBO_ARQS.length?ROBO_ARQS.map(function(a){return '<div style="font-size:9px;padding:3px 0;border-bottom:1px solid var(--bd)">📄 <b>'+a.nome+'</b> · '+a.colabs+' colab · ref '+(a.ref||'—')+' · '+a.quando+'</div>'}).join(''):'<div style="font-size:9px;color:var(--dm)">Nenhum PDF processado ainda. Envie o Espelho de Ponto acima.</div>')+'</div>'
-  +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin:8px 0 4px">☁️ GOOGLE DRIVE — atualização automática</div>'
-  +'<div style="font-size:8px;color:var(--dm);margin-bottom:4px">Funciona quando a pasta do Drive está compartilhada como "qualquer pessoa com o link" e há uma chave de API do Google. Sem isso, use o upload manual acima (sempre disponível).</div>'
-  +'<input id="drvKey" placeholder="Chave de API do Google (AIza…)" value="'+(DRIVE_CFG.apiKey||'')+'" style="width:100%;font-size:9px;padding:4px;margin-bottom:4px" onchange="DRIVE_CFG.apiKey=this.value;driveSave()">'
-  +'<div style="display:flex;gap:4px;align-items:center;margin-bottom:2px"><input id="drvPastaPonto" placeholder="ID da pasta de Ponto no Drive" value="'+(DRIVE_CFG.pastas.ponto||'')+'" style="flex:1;font-size:9px;padding:4px" onchange="DRIVE_CFG.pastas.ponto=this.value;driveSave()"><button onclick="driveSync(\'ponto\')" style="font-size:9px;padding:4px 8px;background:var(--cs);color:#fff;border:none;border-radius:5px;cursor:pointer">🔄 Atualizar agora</button></div>'
-  +'<div id="drvSt-ponto" style="font-size:8px;color:var(--dm)">'+(DRIVE_CFG.status.ponto?('último: '+DRIVE_CFG.status.ponto.quando+' · '+DRIVE_CFG.status.ponto.qtde+' arquivos'):'sem sincronização ainda')+'</div>'
+  +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin:8px 0 4px">☁️ GOOGLE DRIVE — atualização automática (pastas oficiais já vinculadas)</div>'
+  +'<div style="font-size:8px;color:var(--dm);margin-bottom:4px">As 5 pastas do Mapa da Rede CBSI já estão vinculadas (Ponto, RDC, BMS, Pintura, Andaimes). Para o sistema ler sozinho: compartilhe a pasta raiz como "qualquer pessoa com o link" e cole aqui a chave de API do Google. Verificação automática a cada '+(DRIVE_CFG.autoMin||10)+' min + botão manual. Sem isso, o upload manual acima continua valendo.</div>'
+  +'<div style="display:flex;gap:4px;margin-bottom:4px"><input id="drvKey" placeholder="Chave de API do Google (AIza…)" value="'+(DRIVE_CFG.apiKey||'')+'" style="flex:1;font-size:9px;padding:4px" onchange="DRIVE_CFG.apiKey=this.value;driveSave();driveAutoStart()">'
+  +'<button onclick="driveMonitor()" style="font-size:9px;padding:4px 10px;background:var(--cs);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">🔄 Atualizar agora</button></div>'
+  +[['ponto','📄 Ponto (espelhos PDF — processa sozinho)'],['rdc','📝 RDC Campo'],['bms','💰 BMS / Medições'],['pint','🎨 Painel de Pintura'],['andaimes','🏗️ Projetos Andaimes']].map(function(par){
+     var st=DRIVE_CFG.status[par[0]];
+     return '<div style="display:flex;justify-content:space-between;gap:6px;font-size:8px;border-bottom:1px solid var(--bd);padding:3px 0"><span style="font-weight:700">'+par[1]+'</span><span id="drvMon-'+par[0]+'" style="color:var(--dm);text-align:right">'+(st?('✅ '+st.qtde+' arquivo(s) · '+st.quando):'aguardando chave de API')+'</span></div>'}).join('')
   +'</div></div>'
   +'</div>';
   function kpi(l,v,c){return '<div style="border:1px solid var(--bd);border-radius:8px;padding:8px;text-align:center"><div style="font-size:8px;color:var(--dm);font-weight:700">'+l+'</div><div style="font-size:16px;font-weight:800;color:'+c+'">'+v+'</div></div>'}
@@ -6469,7 +6546,7 @@ window.andDrive=function(){
   var st=document.getElementById('drvSt-andaimes'),list=document.getElementById('andDrvList');
   if(!DRIVE_CFG.apiKey||!DRIVE_CFG.pastas.andaimes){if(st)st.textContent='⚙️ configure a chave de API (no Robô de Ponto) e o ID da pasta';return}
   if(st)st.textContent='🔄 consultando…';
-  driveList(DRIVE_CFG.pastas.andaimes).then(function(files){
+  driveListRec(DRIVE_CFG.pastas.andaimes,2).then(function(files){
     if(st)st.textContent='✅ '+files.length+' arquivos ('+new Date().toLocaleString('pt-BR')+')';
     if(list)list.innerHTML=files.map(function(f){return '<div style="font-size:9px;padding:2px 0;border-bottom:1px solid var(--bd)">📄 <a href="https://drive.google.com/file/d/'+f.id+'/view" target="_blank" style="color:var(--cs)">'+f.name+'</a> · '+new Date(f.modifiedTime).toLocaleDateString('pt-BR')+'</div>'}).join('');
   }).catch(function(e){if(st)st.textContent='🔒 '+e.message+' — pasta privada? Compartilhe como "qualquer pessoa com o link".'});
@@ -6491,6 +6568,7 @@ try{
 
 // primeira renderização
 try{renderRobo()}catch(e){console.warn('Robo init:',e)}
+try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
 try{renderAndaimes()}catch(e){console.warn('Andaimes init:',e)}
 // gancho de diagnóstico (usado nos testes automatizados)
 window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,ensurePdfJs:ensurePdfJs};
