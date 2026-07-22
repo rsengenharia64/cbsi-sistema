@@ -5881,7 +5881,7 @@ function lss(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){console
 function hm2h(s){if(!s)return 0;var p=s.split(':');return (+p[0])+(+p[1])/60}
 function h2hm(h){if(!h&&h!==0)return'';var neg=h<0;h=Math.abs(h);var hh=Math.floor(h),mm=Math.round((h-hh)*60);if(mm===60){hh++;mm=0}return(neg?'-':'')+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')}
 function n2(x){return (Math.round(x*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
-function normTxt(s){return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim()}
+function normTxt(s){return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim()}
 function rtoast(m){try{toast(m)}catch(e){console.log(m)}}
 function rlog(mod,ac,det){try{logAudit(mod,ac,det)}catch(e){}}
 
