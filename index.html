@@ -6337,6 +6337,8 @@ function driveMonitor(){
         var el=document.getElementById('drvMon-'+ch);
         if(el)el.textContent='✅ '+files.length+' arquivo(s)'+(DRIVE_CFG.status[ch].ult?(' · último: '+DRIVE_CFG.status[ch].ult.name):'');
         if(ch==='ponto')drivePontoAuto(files);
+        if(ch==='bms')driveBmsAuto(files);
+        if(ch==='pint')drivePintAuto(files);
       }).catch(function(e){
         var el=document.getElementById('drvMon-'+ch);
         if(el)el.textContent='🔒 '+e.message;
@@ -6361,6 +6363,63 @@ function drivePontoAuto(files){
     });
   });
   if(novos)seq.then(function(){renderRobo();rtoast('☁️ Robô de Ponto: '+novos+' PDF(s) novos do Drive processados')});
+}
+// ---- importação automática do conteúdo (BMS e Pintura) ----
+function acharUltimoXlsx(files,regex){
+  var xs=(files||[]).filter(function(f){return /xlsx?$/i.test(f.name)&&(!regex||regex.test(f.name))});
+  xs.sort(function(a,b){return (a.modifiedTime||'')<(b.modifiedTime||'')?1:-1});
+  return xs[0];
+}
+// BM consolidado do Drive → quantidades (nm) dos itens do módulo Boletim Medição
+function driveBmsAuto(files){
+  var f=acharUltimoXlsx(files,/BM|MEDI/i)||acharUltimoXlsx(files);
+  if(!f)return;
+  var marca=f.id+'|'+f.modifiedTime;
+  if(DRIVE_CFG.status.bmsImport&&DRIVE_CFG.status.bmsImport.marca===marca)return;
+  ensureXLSX().then(function(){return driveDownload(f.id)}).then(function(buf){
+    var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+    var shName=wb.SheetNames.filter(function(n){return /MEDICAO|MEDI\u00c7\u00c3O/i.test(n)})[0]||wb.SheetNames[0];
+    var rows=XLSX.utils.sheet_to_json(wb.Sheets[shName],{header:1});
+    var hIdx=-1,cLinha=-1,cQtd=-1;
+    rows.some(function(r,i){
+      if(!r)return false;
+      var j=-1;r.forEach(function(c,k){if(j<0&&typeof c==='string'&&/LINHA DE SERVI/i.test(c))j=k});
+      if(j>=0){hIdx=i;cLinha=j;r.forEach(function(c,k){if(cQtd<0&&typeof c==='string'&&/^QTD/i.test(String(c).trim()))cQtd=k});return true}
+      return false;
+    });
+    if(hIdx<0||cQtd<0)throw new Error('layout do BM nao reconhecido em '+f.name);
+    var porItem={};
+    rows.slice(hIdx+1).forEach(function(r){
+      if(!r)return;var li=parseInt(r[cLinha]),q=parseFloat(r[cQtd]);
+      if(!isNaN(li)&&!isNaN(q))porItem[li]=(porItem[li]||0)+q;
+    });
+    if(!lsg('cbsi-v15-bms-bmbackup',null))lss('cbsi-v15-bms-bmbackup',getBM().map(function(i){return{it:i.it,nm:i.nm}}));
+    var atualizados=0;
+    Object.keys(porItem).forEach(function(it){
+      var item=getBM().filter(function(i){return String(i.it)===String(it)})[0];
+      if(item){item.nm=Math.round(porItem[it]*10000)/10000;atualizados++}
+    });
+    DRIVE_CFG.status.bmsImport={marca:marca,arquivo:f.name,quando:new Date().toLocaleString('pt-BR'),itens:atualizados};driveSave();
+    try{persistAll()}catch(e){}
+    try{renderBM()}catch(e){}
+    rlog('Drive BMS','Importar BM consolidado',f.name+' -> '+atualizados+' itens');
+    rtoast('\ud83d\udcb0 BM atualizado do Drive: '+atualizados+' itens ('+f.name+')');
+  }).catch(function(e){console.warn('BMS import:',e)});
+}
+// Painel de Pintura do Drive → mesma rotina do upload manual já existente no sistema
+function drivePintAuto(files){
+  var f=acharUltimoXlsx(files);
+  if(!f)return;
+  var marca=f.id+'|'+f.modifiedTime;
+  if(DRIVE_CFG.status.pintImport&&DRIVE_CFG.status.pintImport.marca===marca)return;
+  if(typeof window.uploadPintXLSX!=='function'&&typeof uploadPintXLSX!=='function')return;
+  driveDownload(f.id).then(function(buf){
+    DRIVE_CFG.status.pintImport={marca:marca,arquivo:f.name,quando:new Date().toLocaleString('pt-BR')};driveSave();
+    var fn=(typeof uploadPintXLSX==='function')?uploadPintXLSX:window.uploadPintXLSX;
+    fn(new File([buf],f.name));
+    rlog('Drive Pintura','Importar painel',f.name);
+    rtoast('\ud83c\udfa8 Painel de Pintura atualizado do Drive: '+f.name);
+  }).catch(function(e){console.warn('Pint import:',e)});
 }
 var _driveTimer=null;
 function driveAutoStart(){
