@@ -6330,7 +6330,7 @@ function driveMonitor(){
   var seq=Promise.resolve();
   chaves.forEach(function(ch){
     seq=seq.then(function(){
-      return driveListRec(DRIVE_CFG.pastas[ch],2).then(function(files){
+      return driveListRec(DRIVE_CFG.pastas[ch],ch==='andaimes'?4:2).then(function(files){
         DRIVE_CFG.status[ch]={quando:new Date().toLocaleString('pt-BR'),qtde:files.length,
           ult:files.slice().sort(function(a,b){return (b.modifiedTime||'')<(a.modifiedTime||'')?-1:1})[0]};
         driveSave();
@@ -6608,7 +6608,7 @@ window.andDrive=function(){
   var st=document.getElementById('drvSt-andaimes'),list=document.getElementById('andDrvList');
   if(!DRIVE_CFG.apiKey||!DRIVE_CFG.pastas.andaimes){if(st)st.textContent='⚙️ configure a chave de API (no Robô de Ponto) e o ID da pasta';return}
   if(st)st.textContent='🔄 consultando…';
-  driveListRec(DRIVE_CFG.pastas.andaimes,2).then(function(files){
+  driveListRec(DRIVE_CFG.pastas.andaimes,4).then(function(files){
     if(st)st.textContent='✅ '+files.length+' arquivos ('+new Date().toLocaleString('pt-BR')+')';
     if(list)list.innerHTML=files.map(function(f){return '<div style="font-size:9px;padding:2px 0;border-bottom:1px solid var(--bd)">📄 <a href="https://drive.google.com/file/d/'+f.id+'/view" target="_blank" style="color:var(--cs)">'+f.name+'</a> · '+new Date(f.modifiedTime).toLocaleDateString('pt-BR')+'</div>'}).join('');
   }).catch(function(e){if(st)st.textContent='🔒 '+e.message+' — pasta privada? Compartilhe como "qualquer pessoa com o link".'});
