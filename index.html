@@ -5836,7 +5836,6 @@ function updPintField(laudo,campo,valor){
 function buildPages(){document.getElementById('pages').innerHTML=PAGES.map(pg=>`<div class="pg${pg.id==='dash'?' on':''}" id="p-${pg.id}"></div>`).join('')}
 init();buildNav();buildPages();buildChips();buildFAQ();buildDev();buildPintura();try{buildExec()}catch(e){console.warn('Exec:',e)};restoreSession();restoreFromLS();addPersistUI();R();
 </script>
-
 <script>
 // ============================================================================
 // 🤖 MÓDULO ROBÔ DE PONTO + CENTRAL DRIVE + ABA PROJETOS ANDAIMES
@@ -5861,9 +5860,18 @@ var ROBO_PARAMS_DEFAULT={
   contasHE100:['Hora Extra 100%'],
   contasHE150:['HE 150% Pagar','Hora Extra 150%'],
   contasADN:['Adic. Not. Informativo','Adic Not HE 50%','Adic Not HE 100%','Ad Not HE 150%','Adic Not HE 150%'],
-  contasDesconto:['Atraso','Ausência','Ausencia','Falta','Licença','Licenca','Saída','Saida','Afastam','Interjornada','Aguardando','Treinamento','Exame','Presença','Presenca']
+  contasDesconto:['Atraso','Ausência','Ausencia','Falta','Licença','Licenca','Saída','Saida','Afastam','Interjornada','Aguardando','Treinamento','Exame','Presença','Presenca'],
+  // ---- PONTO MANUAL (cargos de confiança — FO-0140) — regras de cálculo próprias, editáveis ----
+  manualJornSegQui:9,             // jornada seg–qui (07–17 com 1h almoço)
+  manualJornSex:8,                // jornada sexta (07–16)
+  manualHeUtil:'he50',            // excedente em dia útil
+  manualHeSab:'he100',            // sábado trabalhado
+  manualHeDom:'he150',            // domingo/feriado trabalhado
+  feriados:['01/01/2026','16/02/2026','17/02/2026','03/04/2026','21/04/2026','01/05/2026','04/06/2026','07/09/2026','12/10/2026','02/11/2026','15/11/2026','20/11/2026','25/12/2026','01/01/2027']
 };
 var ROBO_PARAMS=lsg('cbsi-v15-robo-params',ROBO_PARAMS_DEFAULT);
+// migração: chaves novas que não existiam quando os parâmetros foram salvos
+Object.keys(ROBO_PARAMS_DEFAULT).forEach(function(k){if(ROBO_PARAMS[k]==null)ROBO_PARAMS[k]=ROBO_PARAMS_DEFAULT[k]});
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -6110,18 +6118,147 @@ function calcDia(dia){
   return r;
 }
 
+// ---------------------------------------------------------------------------
+// PONTO MANUAL (FO-0140 "CARTÃO PONTO MANUAL") — cargos de confiança
+// Supervisores / Engenheiro de Segurança / Coordenador etc. não batem ponto no
+// RH (espelho sai zerado); as horas vêm deste formulário e são calculadas aqui.
+// ---------------------------------------------------------------------------
+// o pdf.js às vezes fragmenta números com espaços ("16/0 6 /2026", "1 6:00") — os padrões toleram isso
+var RX_DIA_MANUAL=/^(\d(?:\s*\d)?)\s*\/\s*(\d(?:\s*\d)?)\s*\/\s*(\d(?:\s*\d){3})\s*(.*)$/;
+var RX_HORA_MANUAL=/(\d(?:\s*\d)?)\s*:\s*(\d\s*\d)/g;
+function semEsp(s){return String(s||'').replace(/\s+/g,'')}
+function parseManualPonto(lines){
+  var blocos=[],cur=null,pegandoNome=false;
+  lines.forEach(function(ln){
+    var m;
+    // início de bloco: linha "Matrícula: NOME ... Cargo/Função: CARGO" (no FO-0140 o campo Matrícula traz o NOME)
+    if((m=ln.match(/Matr[íi]cula:?\s*(.*?)\s*Cargo\/?\s*Fun[çc][ãa]o:?\s*(.+)$/i))){
+      if(cur&&cur.dias.length)blocos.push(cur);
+      cur={nome:m[1].trim(),cargo:m[2].trim(),ini:'',fim:'',dias:[]};
+      pegandoNome=true;return;
+    }
+    if(!cur)return;
+    if((m=ln.match(/In[íi]cio Ponto:?\s*([\d\s\/]+?)\s*Fim Ponto:?\s*([\d\s\/]+)$/i))){cur.ini=semEsp(m[1]);cur.fim=semEsp(m[2]);pegandoNome=false;return}
+    if(/Centro Custo|^Turma|^Jornada|^Data\b|Estabelecimento|Assinatura|^FO\s*-|REVIS[ÃA]O|^P[ÁA]G|Manh[ãa]|Entrada/i.test(ln)){pegandoNome=false;/* segue */}
+    else if(pegandoNome&&!RX_DIA_MANUAL.test(ln)&&/^[A-ZÀ-Ú ]{2,}$/.test(ln.trim())){cur.nome=(cur.nome+' '+ln.trim()).trim();return}
+    if((m=ln.match(RX_DIA_MANUAL))){
+      var horas=[],hm;RX_HORA_MANUAL.lastIndex=0;
+      while((hm=RX_HORA_MANUAL.exec(m[4]))&&horas.length<6)horas.push(semEsp(hm[1])+':'+semEsp(hm[2]));
+      var marcador=(m[4].match(/Domingo|S[áa]bado|F[ée]rias|Ferias|Falta|Atestado|Folga|DSR|Licen[çc]a|Afastad/i)||[null])[0];
+      cur.dias.push({d:+semEsp(m[1]),mo:+semEsp(m[2]),y:+semEsp(m[3]),horas:horas,marcador:marcador});
+    }
+  });
+  if(cur&&cur.dias.length)blocos.push(cur);
+  // conserta datas com erro de digitação (ex.: "07/0/2026") pela sequência: dia anterior + 1
+  blocos.forEach(function(b){
+    var prev=null;
+    b.dias.forEach(function(dia){
+      var dt=new Date(dia.y,dia.mo-1,dia.d);
+      var ruim=!dia.mo||dia.mo<1||dia.mo>12||!dia.d||dia.d>31||isNaN(dt.getTime())||dt.getDate()!==dia.d;
+      if(ruim&&prev){dt=new Date(prev.getTime()+86400000)}
+      if(prev&&!ruim){ // se saltou para trás, também usa sequência
+        if(dt<=prev)dt=new Date(prev.getTime()+86400000);
+      }
+      dia.dt=dt;prev=dt;
+    });
+  });
+  return blocos;
+}
+// sobreposição (em horas) do intervalo [a,b] com a janela noturna 22h–5h
+function overlapNoturno(a,b){
+  function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
+  return ov(a,b,0,5)+ov(a,b,22,29)+ov(a,b,24,29);
+}
+// classifica um dia do ponto manual pelas regras editáveis
+function calcManualDia(dia){
+  var P=ROBO_PARAMS,r={hn:0,he50:0,he100:0,he150:0,adn:0,trab:0,obs:[]};
+  if(dia.marcador)r.obs.push(dia.marcador);
+  var hs=dia.horas.map(hm2h);
+  for(var i=0;i+1<hs.length;i+=2){
+    var a=hs[i],b=hs[i+1];if(b<a)b+=24;
+    r.trab+=b-a;r.adn+=overlapNoturno(a,b);
+  }
+  if(r.trab>0){
+    var dd=('0'+dia.dt.getDate()).slice(-2)+'/'+('0'+(dia.dt.getMonth()+1)).slice(-2)+'/'+dia.dt.getFullYear();
+    var dow=dia.dt.getDay();
+    var feriado=(P.feriados||[]).indexOf(dd)>=0;
+    if(dow===0||feriado){r[P.manualHeDom||'he150']+=r.trab}
+    else if(dow===6){r[P.manualHeSab||'he100']+=r.trab}
+    else{
+      var jorn=(dow===5)?(+P.manualJornSex||8):(+P.manualJornSegQui||9);
+      r.hn=Math.min(r.trab,jorn);
+      var extra=r.trab-r.hn;
+      if(extra>0)r[P.manualHeUtil||'he50']+=extra;
+    }
+  }
+  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*100)/100});
+  return r;
+}
+function efetByNome(nome){
+  var n=normTxt(nome);
+  return ROBO_EFET.find(function(e){return normTxt(e.nome)===n})
+      || ROBO_EFET.find(function(e){var x=normTxt(e.nome);return x.indexOf(n)===0||n.indexOf(x)===0});
+}
+var DOW_PT=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+// processa um PDF de Ponto Manual já convertido em linhas
+function processarManual(lines,file,st){
+  var blocos=parseManualPonto(lines);
+  if(!blocos.length)throw new Error('Nenhum cartão de ponto manual reconhecido em '+file.name);
+  // reprocessamento idempotente: remove lançamentos anteriores deste mesmo arquivo
+  ROBO_LANC=ROBO_LANC.filter(function(l){return l.arq!==file.name});
+  var semCad=[],conflitos=0,totalDias=0;
+  blocos.forEach(function(b){
+    var ef=efetByNome(b.nome);
+    if(!ef)semCad.push(b.nome);
+    var cargo=b.cargo||(ef?ef.cargo:'');
+    var funcQ=ROBO_DEPARA[normTxt(cargo)]||ROBO_DEPARA[cargo]||'';
+    var ref=b.fim?(['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'][+b.fim.slice(3,5)-1]+'/'+b.fim.slice(6)):'';
+    b.dias.forEach(function(dia){
+      var c=calcManualDia(dia);
+      var d2=('0'+dia.dt.getDate()).slice(-2)+'/'+('0'+(dia.dt.getMonth()+1)).slice(-2)+'/'+String(dia.dt.getFullYear()).slice(-2);
+      var nomeN=normTxt(ef?ef.nome:b.nome);
+      // guarda de duplicidade contra o espelho RH: se o RH já tem horas nesse dia, o manual não entra;
+      // se o RH tem o dia ZERADO (caso típico dos cargos de confiança), a linha zerada é substituída
+      var rhComHoras=false;
+      ROBO_LANC=ROBO_LANC.filter(function(l){
+        if(l.arq===file.name)return true;
+        if(l.data===d2&&normTxt(l.nome)===nomeN){
+          if((+l.trab||0)>0||(+l.he150||0)>0){rhComHoras=true;return true}
+          return false; // remove a linha zerada do RH — o manual assume o dia
+        }
+        return true;
+      });
+      if(rhComHoras&&c.trab>0){conflitos++;return}
+      ROBO_LANC.push({ref:ref,per:(b.ini||'')+' a '+(b.fim||''),data:d2,dow:DOW_PT[dia.dt.getDay()],phtd:'MAN',
+        id:ef?ef.id:'',mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,
+        hn:c.hn,he50:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,
+        obs:('PONTO MANUAL'+(c.obs.length?' · '+c.obs.join('; '):'')),arq:file.name});
+      totalDias++;
+    });
+  });
+  ROBO_ARQS.unshift({nome:file.name,quando:new Date().toLocaleString('pt-BR'),colabs:blocos.length,dias:totalDias,ref:(blocos[0]&&blocos[0].fim)?('MANUAL '+blocos[0].fim.slice(3)):'MANUAL'});
+  roboSave();
+  rlog('Robô de Ponto','Ponto Manual',file.name+' → '+blocos.length+' colaboradores, '+totalDias+' dias');
+  if(st)st.textContent='🖋 '+file.name+': '+blocos.length+' cartões manuais processados'+(semCad.length?(' · ⚠️ sem cadastro: '+semCad.join(', ')):'')+(conflitos?(' · '+conflitos+' dia(s) já tinham horas no RH (mantido o RH)'):'');
+  return{colabs:blocos.length,semCad:semCad};
+}
+
 // processa PDFs do espelho → lançamentos
 function roboProcessarPdf(file,statusEl){
   var st=function(m){if(statusEl)statusEl.textContent=m};
   st('Lendo '+file.name+'…');
   return file.arrayBuffer().then(function(buf){return pdfToLines(new Uint8Array(buf))})
   .then(function(res){
-    var temTexto=res.lines.filter(function(l){return RX_DIA.test(l)}).length>3;
+    var temTexto=res.lines.filter(function(l){return RX_DIA.test(l)||RX_DIA_MANUAL.test(l)}).length>3;
     if(temTexto)return res.lines;
     st('PDF sem texto — aplicando OCR (pode demorar)…');
     return pdfOcrLines(res.pdf,res.numPages,st);
   })
   .then(function(lines){
+    // roteamento automático: formulário FO-0140 (Cartão Ponto Manual) tem parser e regras próprias
+    if(lines.some(function(l){return /CART[ÃA]O PONTO MANUAL/i.test(l)})){
+      return processarManual(lines,file,statusEl);
+    }
     var blocos=parseEspelhos(lines);
     if(!blocos.length)throw new Error('Nenhum espelho reconhecido em '+file.name);
     var novos=0,semCad=[];
@@ -6251,6 +6388,7 @@ window.roboSetDe=function(v){ROBO_UI.de=v;roboUISave();renderRobo()};
 window.roboSetAte=function(v){ROBO_UI.ate=v;roboUISave();renderRobo()};
 window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
 window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
+window.roboSetParamStr=function(k,v){ROBO_PARAMS[k]=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 // ---- CAPACIDADE PRODUTIVA POR DISCIPLINA (efetivo do mes x HH x metas) ----
 var PROD_PARAMS=lsg('cbsi-v15-prod-params',{diasRef:24,pintM2Dia:6.94,andM3HH:1.8,eletroKgHH:10,custoHH:45});
 window.prodSetParam=function(k,v){PROD_PARAMS[k]=+String(v).replace(',','.');lss('cbsi-v15-prod-params',PROD_PARAMS);renderRobo();try{fixMetricasJornada()}catch(e){}};
@@ -6650,7 +6788,7 @@ function driveMonitor(){
   var seq=Promise.resolve();
   chaves.forEach(function(ch){
     seq=seq.then(function(){
-      return driveListRec(DRIVE_CFG.pastas[ch],ch==='andaimes'?4:2).then(function(files){
+      return driveListRec(DRIVE_CFG.pastas[ch],(ch==='andaimes'||ch==='ponto')?4:2).then(function(files){
         DRIVE_CFG.status[ch]={quando:new Date().toLocaleString('pt-BR'),qtde:files.length,
           ult:files.slice().sort(function(a,b){return (b.modifiedTime||'')<(a.modifiedTime||'')?-1:1})[0]};
         driveSave();
@@ -6750,6 +6888,26 @@ function driveAutoStart(){
   }
 }
 window.driveMonitor=driveMonitor;window.driveAutoStart=driveAutoStart;
+// botão "Atualizar agora" com resposta visual (antes o clique não dava nenhum retorno)
+window.driveAtualizarAgora=function(btn){
+  var g=document.getElementById('drvMonGeral');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Verificando…'}
+  if(g)g.textContent='⏳ Verificando as 5 pastas do Google Drive…';
+  Promise.resolve(driveMonitor()).then(function(){
+    var q=new Date().toLocaleTimeString('pt-BR');
+    DRIVE_CFG.status.geral=q;driveSave();
+    var g2=document.getElementById('drvMonGeral');
+    if(g2)g2.textContent='✅ Verificação concluída às '+q+' — veja o status de cada pasta abaixo.';
+    rtoast('☁️ Drive verificado ('+q+')');
+  }).catch(function(e){
+    var g2=document.getElementById('drvMonGeral');
+    if(g2)g2.textContent='❌ Falha na verificação: '+e.message;
+    rtoast('❌ Drive: '+e.message);
+  }).finally(function(){
+    var b2=document.getElementById('drvBtnAtu');
+    if(b2){b2.disabled=false;b2.textContent='🔄 Atualizar agora'}
+  });
+};
 function driveSync(chave){
   var fid=DRIVE_CFG.pastas[chave];
   var st=document.getElementById('drvSt-'+chave);
@@ -6822,6 +6980,15 @@ function renderRobo(){
        +' · Competência = <select onchange="roboSetParam(\'compOffset\',this.value)" style="font-size:8px"><option value="0" '+(+ROBO_PARAMS.compOffset===0?'selected':'')+'>mês do término</option><option value="1" '+(+ROBO_PARAMS.compOffset===1?'selected':'')+'>mês seguinte ao término</option></select>'
        +' · Espelho de ponto: '+ROBO_PARAMS.pontoIni+'→'+ROBO_PARAMS.pontoFim+' (a apuração é por DATA do lançamento, então funciona mesmo cruzando dois espelhos)'
        +'</div>';
+     var selHE=function(k){var v=ROBO_PARAMS[k];return '<select onchange="roboSetParamStr(\''+k+'\',this.value)" style="font-size:8px">'+['he50','he100','he150'].map(function(o){return '<option value="'+o+'" '+(v===o?'selected':'')+'>'+o.replace('he','HE ')+'%</option>'}).join('')+'</select>'};
+     var nMan=0,arqsMan={};con.regs.forEach(function(l){if((l.obs||'').indexOf('PONTO MANUAL')===0){nMan++;arqsMan[l.arq]=1}});
+     html+='<div style="font-size:8px;color:var(--dm);margin-bottom:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+       +'<b>🖋 PONTO MANUAL (cargos de confiança — pasta "PONTO MANUAL" dentro do mês no Drive, ou upload acima):</b> jornada seg–qui '
+       +'<input type="number" min="1" max="12" step="0.5" value="'+ROBO_PARAMS.manualJornSegQui+'" onchange="roboSetParam(\'manualJornSegQui\',this.value)" style="width:40px;font-size:9px;padding:2px">h · sex '
+       +'<input type="number" min="1" max="12" step="0.5" value="'+ROBO_PARAMS.manualJornSex+'" onchange="roboSetParam(\'manualJornSex\',this.value)" style="width:40px;font-size:9px;padding:2px">h'
+       +' · excedente dia útil → '+selHE('manualHeUtil')+' · sábado → '+selHE('manualHeSab')+' · domingo/feriado → '+selHE('manualHeDom')
+       +(nMan?(' · <b style="color:var(--cs)">'+nMan+' lançamento(s) manuais no período ('+Object.keys(arqsMan).length+' arquivo(s))</b>'):' · nenhum lançamento manual no período selecionado')
+       +'</div>';
      return html;
    })()
   // KPIs
@@ -6876,8 +7043,9 @@ function renderRobo(){
   +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin:8px 0 4px">☁️ GOOGLE DRIVE — atualização automática (pastas oficiais já vinculadas)</div>'
   +'<div style="font-size:8px;color:var(--dm);margin-bottom:4px">As 5 pastas do Mapa da Rede CBSI já estão vinculadas (Ponto, RDC, BMS, Pintura, Andaimes). Para o sistema ler sozinho: compartilhe a pasta raiz como "qualquer pessoa com o link" e cole aqui a chave de API do Google. Verificação automática a cada '+(DRIVE_CFG.autoMin||10)+' min + botão manual. Sem isso, o upload manual acima continua valendo.</div>'
   +'<div style="display:flex;gap:4px;margin-bottom:4px"><input id="drvKey" placeholder="Chave de API do Google (AIza…)" value="'+(DRIVE_CFG.apiKey||'')+'" style="flex:1;font-size:9px;padding:4px" onchange="DRIVE_CFG.apiKey=this.value;driveSave();driveAutoStart()">'
-  +'<button onclick="driveMonitor()" style="font-size:9px;padding:4px 10px;background:var(--cs);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">🔄 Atualizar agora</button></div>'
-  +[['ponto','📄 Ponto (espelhos PDF — processa sozinho)'],['rdc','📝 RDC Campo'],['bms','💰 BMS / Medições'],['pint','🎨 Painel de Pintura'],['andaimes','🏗️ Projetos Andaimes']].map(function(par){
+  +'<button id="drvBtnAtu" onclick="driveAtualizarAgora(this)" style="font-size:9px;padding:4px 10px;background:var(--cs);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">🔄 Atualizar agora</button></div>'
+  +'<div id="drvMonGeral" style="font-size:8px;color:var(--dm);margin-bottom:4px">'+(DRIVE_CFG.status.geral?('Última verificação: '+DRIVE_CFG.status.geral):'')+'</div>'
+  +[['ponto','📄 Ponto (espelhos RH + PONTO MANUAL — processa sozinho)'],['rdc','📝 RDC Campo'],['bms','💰 BMS / Medições'],['pint','🎨 Painel de Pintura'],['andaimes','🏗️ Projetos Andaimes']].map(function(par){
      var st=DRIVE_CFG.status[par[0]];
      return '<div style="display:flex;justify-content:space-between;gap:6px;font-size:8px;border-bottom:1px solid var(--bd);padding:3px 0"><span style="font-weight:700">'+par[1]+'</span><span id="drvMon-'+par[0]+'" style="color:var(--dm);text-align:right">'+(st?('✅ '+st.qtde+' arquivo(s) · '+st.quando):'aguardando primeira verificação')+'</span></div>'}).join('')
   +'</div></div>'
