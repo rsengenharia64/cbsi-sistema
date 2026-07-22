@@ -5851,6 +5851,10 @@ init();buildNav();buildPages();buildChips();buildFAQ();buildDev();buildPintura()
 // ---------------------------------------------------------------------------
 var ROBO_PARAMS_DEFAULT={
   usarContaOficial:true,          // usa a coluna Conta/Valor do espelho (oficial RH) para HE/ADN
+  // regras de período (editáveis na tela — mudou o contrato, muda aqui, nada quebra)
+  medIni:21, medFim:20,          // período de apuração da medição: dia 21 -> dia 20
+  compOffset:1,                  // competência = mês do TÉRMINO do período + offset (1 = mês seguinte)
+  pontoIni:16, pontoFim:15,      // período do espelho de ponto (informativo)
   jornadaPadraoDia:9,             // horas de trabalho num dia cheio (07-17 com 1h almoço)
   adnIni:22, adnFim:5,            // janela do adicional noturno (usado só no cálculo próprio)
   contasHE50:['Hora Extra 50%'],
@@ -6188,6 +6192,65 @@ function roboRefAtivas(){
   if(v==='__auto__'||v==='')return refsDoFiltroGlobal();
   return [v];
 }
+// ---- MOTOR DE APURAÇÃO POR PERÍODO (dia a dia, independente do espelho de origem) ----
+function dataBR(s){var p=String(s||'').split('/');return new Date(2000+(+p[2]),(+p[1])-1,+p[0])}
+function fmtD(d){return pad2(d.getDate())+'/'+pad2(d.getMonth()+1)+'/'+d.getFullYear()}
+// período de apuração da MEDIÇÃO para uma competência (mes 1..12, ano)
+// regra padrão: competência AGO = 21/06 a 20/07 (termina no mês anterior à competência; começa no mês anterior ao término)
+function periodoDaCompetencia(mes,ano){
+  var P=ROBO_PARAMS,off=(P.compOffset==null?1:+P.compOffset);
+  var fimMes=mes-off,fimAno=ano;while(fimMes<1){fimMes+=12;fimAno--}while(fimMes>12){fimMes-=12;fimAno++}
+  var iniMes=fimMes,iniAno=fimAno;
+  if((+P.medIni)>(+P.medFim)){iniMes=fimMes-1;if(iniMes<1){iniMes=12;iniAno--}}
+  return{ini:new Date(iniAno,iniMes-1,+P.medIni),fim:new Date(fimAno,fimMes-1,+P.medFim),
+         desc:pad2(+P.medIni)+'/'+pad2(iniMes)+'/'+iniAno+' a '+pad2(+P.medFim)+'/'+pad2(fimMes)+'/'+fimAno};
+}
+var MESES_NOMES=['','JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+// estado da UI de apuração (sobrevive aos re-renders)
+var ROBO_UI=lsg('cbsi-v15-robo-ui',{modo:'comp',de:'',ate:'',ref:''});
+function roboUISave(){lss('cbsi-v15-robo-ui',ROBO_UI)}
+// seleção ativa: devolve os LANÇAMENTOS (dia a dia) do período + rótulo + rastreabilidade
+function roboFiltroAtivo(){
+  var modo=ROBO_UI.modo||'comp';
+  if(modo==='ref'){
+    var refs=ROBO_UI.ref&&roboRefs().indexOf(ROBO_UI.ref)>=0?[ROBO_UI.ref]:roboRefs();
+    var regs=ROBO_LANC.filter(function(l){return refs.indexOf(l.ref)>=0});
+    return{modo:modo,regs:regs,rotulo:refs.join('+')||'GERAL',titulo:'Espelho(s): '+(refs.join(', ')||'—'),periodos:[]};
+  }
+  if(modo==='custom'){
+    if(!ROBO_UI.de||!ROBO_UI.ate)return{modo:modo,regs:[],rotulo:'PERIODO',titulo:'Informe as duas datas do período',periodos:[]};
+    var di=new Date(ROBO_UI.de+'T00:00:00'),df=new Date(ROBO_UI.ate+'T00:00:00');
+    var regs2=ROBO_LANC.filter(function(l){var d=dataBR(l.data);return d>=di&&d<=df});
+    return{modo:modo,regs:regs2,rotulo:fmtD(di).replace(/\//g,'-')+'_a_'+fmtD(df).replace(/\//g,'-'),
+           titulo:'Período personalizado (medição parcial): '+fmtD(di)+' a '+fmtD(df),periodos:[{desc:fmtD(di)+' a '+fmtD(df)}]};
+  }
+  // modo 'comp' — competência(s) do filtro global de meses
+  var meses=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)meses=[...SM].sort(function(a,b){return a-b})}catch(e){}
+  var ano=(typeof Y!=='undefined')?Y:(new Date()).getFullYear();
+  if(!meses.length)return{modo:modo,regs:ROBO_LANC.slice(),rotulo:'GERAL',titulo:'Todas as competências (nenhum mês selecionado no filtro global)',periodos:[]};
+  var pers=meses.map(function(m){return{m:m,ano:ano,p:periodoDaCompetencia(m,ano)}});
+  var regs3=ROBO_LANC.filter(function(l){var d=dataBR(l.data);return pers.some(function(x){return d>=x.p.ini&&d<=x.p.fim})});
+  return{modo:modo,regs:regs3,
+         rotulo:pers.map(function(x){return MESES_NOMES[x.m]+'-'+x.ano}).join('_'),
+         titulo:pers.map(function(x){return 'Competência '+MESES_NOMES[x.m]+'/'+x.ano+' — apuração '+x.p.desc}).join('  |  '),
+         periodos:pers.map(function(x){return{comp:MESES_NOMES[x.m]+'/'+x.ano,desc:x.p.desc}})};
+}
+function roboConsolidaRegs(regs){
+  var porFunc={},porColab={};
+  (regs||[]).forEach(function(l){
+    var f=l.funcQQP||('(sem De×Para: '+l.cargo+')');
+    var a=porFunc[f]=porFunc[f]||{hn:0,he50:0,he100:0,he150:0,adn:0,colabs:{}};
+    a.hn+=l.hn;a.he50+=l.he50;a.he100+=l.he100;a.he150+=l.he150;a.adn+=l.adn;a.colabs[l.id]=1;
+    var c=porColab[l.id]=porColab[l.id]||{id:l.id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,hn:0,he50:0,he100:0,he150:0,adn:0,dias:0};
+    c.hn+=l.hn;c.he50+=l.he50;c.he100+=l.he100;c.he150+=l.he150;c.adn+=l.adn;if(l.trab>0)c.dias++;
+  });
+  return{porFunc:porFunc,porColab:porColab,regs:regs||[]};
+}
+window.roboSetModo=function(v){ROBO_UI.modo=v;roboUISave();renderRobo()};
+window.roboSetDe=function(v){ROBO_UI.de=v;roboUISave();renderRobo()};
+window.roboSetAte=function(v){ROBO_UI.ate=v;roboUISave();renderRobo()};
+window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
+window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 function roboConsolida(ref){
   var lista=Array.isArray(ref)?ref:(ref?[ref]:null);
   var fil=ROBO_LANC.filter(function(l){return !lista||lista.indexOf(l.ref)>=0});
@@ -6221,8 +6284,8 @@ function roboExportXLSX(){
   ensureExcelJS().then(function(){roboExportFormatado()}).catch(function(e){console.warn('ExcelJS indisponivel, usando exportacao simples:',e);roboExportSimples()});
 }
 function roboExportFormatado(){
-  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
-  var con=roboConsolida(refsA.length?refsA:null);
+  var FA=roboFiltroAtivo();var ref=FA.titulo||FA.rotulo;
+  var con=roboConsolidaRegs(FA.regs);
   var per=con.regs.length?con.regs[0].per:'';
   var wb=new ExcelJS.Workbook();
   wb.creator='CBSI Gestão Operacional v15';wb.created=new Date();
@@ -6247,7 +6310,7 @@ function roboExportFormatado(){
   t.font={bold:true,size:16,color:{argb:XC.navy},name:'Calibri'};t.alignment={vertical:'middle'};
   ws.mergeCells('D4:K4');ws.getCell('D4').value='CBSI · Contrato VALE 5900117444 · CC CB803480 · Porto de Tubarão – ES';
   ws.getCell('D4').font={size:10,color:{argb:XC.grayTx}};
-  ws.mergeCells('D5:K5');ws.getCell('D5').value='Referência: '+(ref||'GERAL')+'    ·    Período: '+(per||'—')+'    ·    Gerado em: '+new Date().toLocaleString('pt-BR')+'    ·    Fonte: Espelho do Cartão de Ponto (RH) via Robô de Ponto';
+  ws.mergeCells('D5:K5');ws.getCell('D5').value='Apuração: '+(ref||'GERAL')+'    ·    Gerado em: '+new Date().toLocaleString('pt-BR')+'    ·    Fonte: Espelho do Cartão de Ponto (RH) via Robô de Ponto';
   ws.getCell('D5').font={size:9,color:{argb:XC.grayTx}};
   // KPIs
   var kpis=[['Colaboradores',Object.keys(con.porColab).length,XC.navy],['HN — Hora Normal',tot.hn,XC.blue],['HE 50%',tot.he50,XC.orange],['HE 100%',tot.he100,XC.orange],['HE 150%',tot.he150,XC.orange],['AD. Noturno',tot.adn,XC.green],['Total de Horas',tot.hn+tot.he50+tot.he100+tot.he150,XC.navy],['Valor BM (R$)',valorTotal,XC.green]];
@@ -6361,7 +6424,7 @@ function roboExportFormatado(){
   wb.xlsx.writeBuffer().then(function(buf){
     var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     var a=document.createElement('a');a.href=URL.createObjectURL(blob);
-    a.download='CBSI_Robo_Ponto_'+(refsA.length?refsA.join('_'):'GERAL').replace(/\//g,'-').replace(/\s/g,'')+'.xlsx';a.click();
+    a.download='CBSI_Robo_Ponto_'+String(FA.rotulo||'GERAL').replace(/[\/\s]/g,'-')+'.xlsx';a.click();
     setTimeout(function(){URL.revokeObjectURL(a.href)},4000);
     rlog('Robô de Ponto','Exportar Excel formatado',ref||'geral');
     rtoast('📥 Planilha formatada gerada: '+a.download);
@@ -6370,8 +6433,8 @@ function roboExportFormatado(){
 }
 
 function roboExportSimples(){
-  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
-  var con=roboConsolida(refsA.length?refsA:null);
+  var FA=roboFiltroAtivo();var ref=FA.titulo||FA.rotulo;
+  var con=roboConsolidaRegs(FA.regs);
   var wb=XLSX.utils.book_new();
   // aba Detalhe
   var det=[['Ref','Período','Data','Dia','PHTD','ID','Matrícula CBSI','Nome','Função CBSI','Função Cobrada (QQP)','HN','HE 50%','HE 100%','HE 150%','AD.Not','Horas Trab','Observações','Arquivo']];
@@ -6411,13 +6474,13 @@ function roboExportSimples(){
   var dp=[['Função CBSI (De)','Função Cobrada (Para)']];
   Object.keys(ROBO_DEPARA).sort().forEach(function(k){dp.push([k,ROBO_DEPARA[k]])});
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(dp),'De x Para');
-  XLSX.writeFile(wb,'Robo_Ponto_'+(refsA.length?refsA.join('_'):'GERAL').replace(/\//g,'-').replace(/\s/g,'')+'.xlsx');
+  XLSX.writeFile(wb,'Robo_Ponto_'+String(FA.rotulo||'GERAL').replace(/[\/\s]/g,'-')+'.xlsx');
   rlog('Robô de Ponto','Exportar Excel',ref||'geral');
   function r2(x){return Math.round(x*100)/100}
 }
 function roboImprimir(){
-  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
-  var con=roboConsolida(refsA.length?refsA:null);
+  var FA=roboFiltroAtivo();var ref=FA.titulo||FA.rotulo;
+  var con=roboConsolidaRegs(FA.regs);
   var w=window.open('','_blank');
   var rows=Object.keys(con.porFunc).sort().map(function(f){var a=con.porFunc[f];
     return '<tr><td>'+f+'</td><td>'+Object.keys(a.colabs).length+'</td><td>'+n2(a.hn)+'</td><td>'+n2(a.he50)+'</td><td>'+n2(a.he100)+'</td><td>'+n2(a.he150)+'</td><td>'+n2(a.adn)+'</td><td><b>'+n2(a.hn+a.he50+a.he100+a.he150)+'</b></td></tr>'}).join('');
@@ -6429,8 +6492,8 @@ function roboImprimir(){
 // REPLICAR NO BM (não destrutivo, com backup e desfazer)
 // ---------------------------------------------------------------------------
 function roboAplicarBM(){
-  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
-  var con=roboConsolida(refsA.length?refsA:null);
+  var FA=roboFiltroAtivo();var ref=FA.titulo||FA.rotulo;
+  var con=roboConsolidaRegs(FA.regs);
   var backup=lsg('cbsi-v15-robo-bmbackup',null);
   if(!backup){backup=getBM().map(function(i){return{it:i.it,nm:i.nm}});lss('cbsi-v15-robo-bmbackup',backup)}
   var semItem=[],porItem={};   // agrupa por item do BM (duas funções podem cair no mesmo item do contrato)
@@ -6651,12 +6714,8 @@ function renderRobo(){
   var host=document.getElementById('roboBox');
   if(!host){var pg=document.getElementById('p-ponto');if(!pg)return;host=document.createElement('div');host.id='roboBox';pg.appendChild(host)}
   var refs=roboRefs();
-  var refSel=document.getElementById('roboRef');var modo=refSel?refSel.value:'__auto__';
-  if(modo!=='__auto__'&&refs.indexOf(modo)<0)modo='__auto__';
-  var refsAtivas=(modo==='__auto__')?refsDoFiltroGlobal():[modo];
-  var refAtual=modo;
-  var con=roboConsolida(refsAtivas.length?refsAtivas:['__nenhuma__']);
-  if(!refs.length)con=roboConsolida(null);
+  var FA=roboFiltroAtivo();
+  var con=roboConsolidaRegs(FA.regs);
   var tot={hn:0,he50:0,he100:0,he150:0,adn:0};
   Object.values(con.porFunc).forEach(function(a){tot.hn+=a.hn;tot.he50+=a.he50;tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn});
   var funcs=funcoesBM();
@@ -6673,13 +6732,26 @@ function renderRobo(){
   +'</div></div>'
   +'<div id="roboStatus" style="font-size:9px;color:var(--ca);min-height:14px;margin-bottom:6px"></div>'
   +(function(){
-     if(modo==='__auto__'&&typeof SM!=='undefined'&&SM&&SM.size>0&&!refsAtivas.length&&refs.length){
-       var nomes={1:'JAN',2:'FEV',3:'MAR',4:'ABR',5:'MAI',6:'JUN',7:'JUL',8:'AGO',9:'SET',10:'OUT',11:'NOV',12:'DEZ'};
-       var sel=[].concat([]);try{sel=[...SM].sort(function(a,b){return a-b}).map(function(m){return nomes[m]})}catch(e){}
-       return '<div style="font-size:9px;font-weight:700;color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 10px;margin-bottom:6px">⚠️ Sem espelho de ponto para a competência selecionada no filtro global ('+sel.join(', ')+'). Competências com dados: '+refs.join(', ')+'. Selecione o mês correspondente na barra superior ou escolha a referência manualmente ao lado.</div>';
+     var fontes={};FA.regs.forEach(function(l){fontes[l.arq]=(fontes[l.arq]||0)+1});
+     var fontesTxt=Object.keys(fontes).map(function(a){return a+' ('+fontes[a]+' lançamentos)'}).join(' · ');
+     var minD=null,maxD=null;FA.regs.forEach(function(l){var d=dataBR(l.data);if(!minD||d<minD)minD=d;if(!maxD||d>maxD)maxD=d});
+     var html='';
+     if(!FA.regs.length){
+       html+='<div style="font-size:9px;font-weight:700;color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 10px;margin-bottom:6px">⚠️ Nenhum lançamento de ponto dentro do período de apuração selecionado ('+(FA.titulo||'')+'). Espelhos disponíveis: '+(refs.join(', ')||'nenhum')+'.</div>';
+     }else{
+       html+='<div style="font-size:9px;background:rgba(0,173,249,.06);border:1px solid rgba(0,173,249,.2);border-radius:6px;padding:6px 10px;margin-bottom:6px">'
+         +'<b style="color:var(--cs)">🎯 '+FA.titulo+'</b>'
+         +'<div style="margin-top:3px;color:var(--dm)"><b>RASTREABILIDADE:</b> '+FA.regs.length+' lançamentos de '+Object.keys(con.porColab).length+' colaboradores · datas de '+(minD?fmtD(minD):'—')+' a '+(maxD?fmtD(maxD):'—')+' · Fontes: '+(fontesTxt||'—')+'</div>'
+         +'</div>';
      }
-     if(!refsAtivas.length)return '';
-     return '<div style="font-size:9px;background:rgba(0,173,249,.06);border:1px solid rgba(0,173,249,.2);border-radius:6px;padding:6px 10px;margin-bottom:6px"><b style="color:var(--cs)">📅 COMPETÊNCIA DE MEDIÇÃO:</b> '+refsAtivas.map(function(r){var cp=compPeriodos(r);return '<b>'+r+'</b>'+(cp?' — período do ponto: '+cp.ponto+' · período da medição: '+cp.med:'')}).join('  |  ')+' · <span style="color:var(--dm)">O espelho de ponto (16→15) alimenta a medição do mesmo mês de competência (21→20).</span></div>';
+     html+='<div style="font-size:8px;color:var(--dm);margin-bottom:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+       +'<b>REGRAS DO PERÍODO (editáveis):</b> Medição do dia '
+       +'<input type="number" min="1" max="31" value="'+ROBO_PARAMS.medIni+'" onchange="roboSetParam(\'medIni\',this.value)" style="width:44px;font-size:9px;padding:2px"> ao dia '
+       +'<input type="number" min="1" max="31" value="'+ROBO_PARAMS.medFim+'" onchange="roboSetParam(\'medFim\',this.value)" style="width:44px;font-size:9px;padding:2px">'
+       +' · Competência = <select onchange="roboSetParam(\'compOffset\',this.value)" style="font-size:8px"><option value="0" '+(+ROBO_PARAMS.compOffset===0?'selected':'')+'>mês do término</option><option value="1" '+(+ROBO_PARAMS.compOffset===1?'selected':'')+'>mês seguinte ao término</option></select>'
+       +' · Espelho de ponto: '+ROBO_PARAMS.pontoIni+'→'+ROBO_PARAMS.pontoFim+' (a apuração é por DATA do lançamento, então funciona mesmo cruzando dois espelhos)'
+       +'</div>';
+     return html;
    })()
   // KPIs
   +'<div class="g g5" style="margin-bottom:8px">'
@@ -6687,10 +6759,15 @@ function renderRobo(){
   +'</div>'
   // barra de ações
   +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
-  +'<span style="font-size:9px;font-weight:700;color:var(--dm)">REFERÊNCIA:</span>'
-  +'<select id="roboRef" onchange="renderRobo()" style="font-size:10px;padding:4px 8px;font-weight:700">'
-  +'<option value="__auto__" '+(modo==='__auto__'?'selected':'')+'>🔗 Seguir filtro de meses'+(refsAtivas.length?' ('+refsAtivas.join(', ')+')':'')+'</option>'
-  +refs.map(function(r){return '<option '+(r===modo?'selected':'')+'>'+r+'</option>'}).join('')+'</select>'
+  +'<span style="font-size:9px;font-weight:700;color:var(--dm)">APURAÇÃO:</span>'
+  +'<select onchange="roboSetModo(this.value)" style="font-size:10px;padding:4px 8px;font-weight:700">'
+  +'<option value="comp" '+(FA.modo==='comp'?'selected':'')+'>🎯 Competência de medição (filtro de meses)</option>'
+  +'<option value="custom" '+(FA.modo==='custom'?'selected':'')+'>📅 Período manual (medição parcial)</option>'
+  +'<option value="ref" '+(FA.modo==='ref'?'selected':'')+'>📄 Por espelho de ponto</option>'
+  +'</select>'
+  +(FA.modo==='custom'?('<input type="date" value="'+(ROBO_UI.de||'')+'" onchange="roboSetDe(this.value)" style="font-size:9px;padding:3px"> <span style="font-size:9px">a</span> <input type="date" value="'+(ROBO_UI.ate||'')+'" onchange="roboSetAte(this.value)" style="font-size:9px;padding:3px">'):'')
+  +(FA.modo==='ref'?('<select onchange="roboSetRefManual(this.value)" style="font-size:9px;padding:3px"><option value="">Todos os espelhos</option>'+refs.map(function(r){return '<option '+(r===ROBO_UI.ref?'selected':'')+'>'+r+'</option>'}).join('')+'</select>'):'')
+  +'<span id="roboRef" style="display:none">'+FA.rotulo+'</span>'
   +'<button onclick="roboExportXLSX()" style="font-size:9px;font-weight:700;padding:5px 10px;background:var(--gn);color:#fff;border:none;border-radius:6px;cursor:pointer">📥 Exportar Excel (fórmulas)</button>'
   +'<button onclick="roboImprimir()" style="font-size:9px;font-weight:700;padding:5px 10px;border:1px solid var(--bd);border-radius:6px;cursor:pointer;background:transparent;color:var(--tx)">🖨 Imprimir</button>'
   +'<button onclick="roboAplicarBM()" style="font-size:9px;font-weight:700;padding:5px 10px;background:var(--co);color:#fff;border:none;border-radius:6px;cursor:pointer">💰 Aplicar no BM</button>'
@@ -6700,7 +6777,7 @@ function renderRobo(){
   +(semDepara.length?'<div style="font-size:9px;color:var(--rd);font-weight:700;margin-bottom:6px">⚠️ Funções sem De×Para definido: '+semDepara.join(', ')+' — ajuste na tabela abaixo.</div>':'')
   // consolidação por função QQP
   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">'
-  +'<div><div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:4px">📊 CONSOLIDAÇÃO POR FUNÇÃO COBRADA (QQP)'+(refsAtivas.length?' · '+refsAtivas.join(' + '):'')+'</div>'
+  +'<div><div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:4px">📊 CONSOLIDAÇÃO POR FUNÇÃO COBRADA (QQP)'+(FA.rotulo&&FA.rotulo!=='GERAL'?' · '+FA.rotulo.replace(/_/g,' '):'')+'</div>'
   +'<div style="max-height:280px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">'
   +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Função</th><th>Colab</th><th>HN</th><th>50%</th><th>100%</th><th>150%</th><th>ADN</th><th>R$ BM</th></tr>'
   +Object.keys(con.porFunc).sort().map(function(f){var a=con.porFunc[f];var vr=0;
