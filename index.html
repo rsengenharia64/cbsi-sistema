@@ -6167,8 +6167,30 @@ function roboImportEfet(file){
 // APURAÇÃO / CONSOLIDAÇÃO
 // ---------------------------------------------------------------------------
 function roboRefs(){var s={};ROBO_LANC.forEach(function(l){s[l.ref]=1});return Object.keys(s).sort()}
+// ---- COMPETENCIA: ponto 16->15 | medicao 21->20 | Ref do espelho = mes da medicao ----
+var MESES_ABREV={JAN:1,FEV:2,MAR:3,ABR:4,MAI:5,JUN:6,JUL:7,AGO:8,SET:9,OUT:10,NOV:11,DEZ:12};
+function refInfo(ref){var p=String(ref||'').split('/');return{mes:MESES_ABREV[p[0]]||0,ano:parseInt(p[1])||0}}
+function pad2(n){return String(n).padStart(2,'0')}
+function compPeriodos(ref){var i=refInfo(ref);if(!i.mes)return null;var mA=i.mes===1?12:i.mes-1;
+  return{ponto:'16/'+pad2(mA)+' a 15/'+pad2(i.mes),med:'21/'+pad2(mA)+' a 20/'+pad2(i.mes)}}
+function refsDoFiltroGlobal(){
+  try{
+    if(typeof SM!=='undefined'&&SM&&SM.size>0){
+      var ano=(typeof Y!=='undefined')?Y:null;
+      return roboRefs().filter(function(r){var i=refInfo(r);return SM.has(i.mes)&&(!ano||!i.ano||i.ano===ano)});
+    }
+  }catch(e){}
+  return roboRefs();
+}
+function roboRefAtivas(){
+  var sel=document.getElementById('roboRef');
+  var v=sel?sel.value:'__auto__';
+  if(v==='__auto__'||v==='')return refsDoFiltroGlobal();
+  return [v];
+}
 function roboConsolida(ref){
-  var fil=ROBO_LANC.filter(function(l){return !ref||l.ref===ref});
+  var lista=Array.isArray(ref)?ref:(ref?[ref]:null);
+  var fil=ROBO_LANC.filter(function(l){return !lista||lista.indexOf(l.ref)>=0});
   var porFunc={},porColab={};
   fil.forEach(function(l){
     var f=l.funcQQP||('(sem De×Para: '+l.cargo+')');
@@ -6199,8 +6221,8 @@ function roboExportXLSX(){
   ensureExcelJS().then(function(){roboExportFormatado()}).catch(function(e){console.warn('ExcelJS indisponivel, usando exportacao simples:',e);roboExportSimples()});
 }
 function roboExportFormatado(){
-  var ref=document.getElementById('roboRef')?document.getElementById('roboRef').value:'';
-  var con=roboConsolida(ref);
+  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
+  var con=roboConsolida(refsA.length?refsA:null);
   var per=con.regs.length?con.regs[0].per:'';
   var wb=new ExcelJS.Workbook();
   wb.creator='CBSI Gestão Operacional v15';wb.created=new Date();
@@ -6339,7 +6361,7 @@ function roboExportFormatado(){
   wb.xlsx.writeBuffer().then(function(buf){
     var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     var a=document.createElement('a');a.href=URL.createObjectURL(blob);
-    a.download='CBSI_Robo_Ponto_'+(ref||'GERAL').replace('/','-')+'.xlsx';a.click();
+    a.download='CBSI_Robo_Ponto_'+(refsA.length?refsA.join('_'):'GERAL').replace(/\//g,'-').replace(/\s/g,'')+'.xlsx';a.click();
     setTimeout(function(){URL.revokeObjectURL(a.href)},4000);
     rlog('Robô de Ponto','Exportar Excel formatado',ref||'geral');
     rtoast('📥 Planilha formatada gerada: '+a.download);
@@ -6348,8 +6370,8 @@ function roboExportFormatado(){
 }
 
 function roboExportSimples(){
-  var ref=document.getElementById('roboRef')?document.getElementById('roboRef').value:'';
-  var con=roboConsolida(ref);
+  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
+  var con=roboConsolida(refsA.length?refsA:null);
   var wb=XLSX.utils.book_new();
   // aba Detalhe
   var det=[['Ref','Período','Data','Dia','PHTD','ID','Matrícula CBSI','Nome','Função CBSI','Função Cobrada (QQP)','HN','HE 50%','HE 100%','HE 150%','AD.Not','Horas Trab','Observações','Arquivo']];
@@ -6389,13 +6411,13 @@ function roboExportSimples(){
   var dp=[['Função CBSI (De)','Função Cobrada (Para)']];
   Object.keys(ROBO_DEPARA).sort().forEach(function(k){dp.push([k,ROBO_DEPARA[k]])});
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(dp),'De x Para');
-  XLSX.writeFile(wb,'Robo_Ponto_'+(ref||'GERAL').replace('/','-')+'.xlsx');
+  XLSX.writeFile(wb,'Robo_Ponto_'+(refsA.length?refsA.join('_'):'GERAL').replace(/\//g,'-').replace(/\s/g,'')+'.xlsx');
   rlog('Robô de Ponto','Exportar Excel',ref||'geral');
   function r2(x){return Math.round(x*100)/100}
 }
 function roboImprimir(){
-  var ref=document.getElementById('roboRef')?document.getElementById('roboRef').value:'';
-  var con=roboConsolida(ref);
+  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
+  var con=roboConsolida(refsA.length?refsA:null);
   var w=window.open('','_blank');
   var rows=Object.keys(con.porFunc).sort().map(function(f){var a=con.porFunc[f];
     return '<tr><td>'+f+'</td><td>'+Object.keys(a.colabs).length+'</td><td>'+n2(a.hn)+'</td><td>'+n2(a.he50)+'</td><td>'+n2(a.he100)+'</td><td>'+n2(a.he150)+'</td><td>'+n2(a.adn)+'</td><td><b>'+n2(a.hn+a.he50+a.he100+a.he150)+'</b></td></tr>'}).join('');
@@ -6407,8 +6429,8 @@ function roboImprimir(){
 // REPLICAR NO BM (não destrutivo, com backup e desfazer)
 // ---------------------------------------------------------------------------
 function roboAplicarBM(){
-  var ref=document.getElementById('roboRef')?document.getElementById('roboRef').value:'';
-  var con=roboConsolida(ref);
+  var refsA=roboRefAtivas();var ref=refsA.join(' + ');
+  var con=roboConsolida(refsA.length?refsA:null);
   var backup=lsg('cbsi-v15-robo-bmbackup',null);
   if(!backup){backup=getBM().map(function(i){return{it:i.it,nm:i.nm}});lss('cbsi-v15-robo-bmbackup',backup)}
   var semItem=[],porItem={};   // agrupa por item do BM (duas funções podem cair no mesmo item do contrato)
@@ -6629,9 +6651,12 @@ function renderRobo(){
   var host=document.getElementById('roboBox');
   if(!host){var pg=document.getElementById('p-ponto');if(!pg)return;host=document.createElement('div');host.id='roboBox';pg.appendChild(host)}
   var refs=roboRefs();
-  var refSel=document.getElementById('roboRef');var refAtual=refSel?refSel.value:(refs[refs.length-1]||'');
-  if(refs.indexOf(refAtual)<0)refAtual=refs[refs.length-1]||'';
-  var con=roboConsolida(refAtual);
+  var refSel=document.getElementById('roboRef');var modo=refSel?refSel.value:'__auto__';
+  if(modo!=='__auto__'&&refs.indexOf(modo)<0)modo='__auto__';
+  var refsAtivas=(modo==='__auto__')?refsDoFiltroGlobal():[modo];
+  var refAtual=modo;
+  var con=roboConsolida(refsAtivas.length?refsAtivas:['__nenhuma__']);
+  if(!refs.length)con=roboConsolida(null);
   var tot={hn:0,he50:0,he100:0,he150:0,adn:0};
   Object.values(con.porFunc).forEach(function(a){tot.hn+=a.hn;tot.he50+=a.he50;tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn});
   var funcs=funcoesBM();
@@ -6647,6 +6672,15 @@ function renderRobo(){
   +'<label style="font-size:9px;font-weight:700;padding:6px 12px;border:1px solid var(--cs);color:var(--cs);border-radius:6px;cursor:pointer">👷 Atualizar Efetivos (XLSX)<input type="file" accept=".xlsx,.xls" style="display:none" onchange="roboImportEfet(this.files[0]);this.value=\'\'"></label>'
   +'</div></div>'
   +'<div id="roboStatus" style="font-size:9px;color:var(--ca);min-height:14px;margin-bottom:6px"></div>'
+  +(function(){
+     if(modo==='__auto__'&&typeof SM!=='undefined'&&SM&&SM.size>0&&!refsAtivas.length&&refs.length){
+       var nomes={1:'JAN',2:'FEV',3:'MAR',4:'ABR',5:'MAI',6:'JUN',7:'JUL',8:'AGO',9:'SET',10:'OUT',11:'NOV',12:'DEZ'};
+       var sel=[].concat([]);try{sel=[...SM].sort(function(a,b){return a-b}).map(function(m){return nomes[m]})}catch(e){}
+       return '<div style="font-size:9px;font-weight:700;color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 10px;margin-bottom:6px">⚠️ Sem espelho de ponto para a competência selecionada no filtro global ('+sel.join(', ')+'). Competências com dados: '+refs.join(', ')+'. Selecione o mês correspondente na barra superior ou escolha a referência manualmente ao lado.</div>';
+     }
+     if(!refsAtivas.length)return '';
+     return '<div style="font-size:9px;background:rgba(0,173,249,.06);border:1px solid rgba(0,173,249,.2);border-radius:6px;padding:6px 10px;margin-bottom:6px"><b style="color:var(--cs)">📅 COMPETÊNCIA DE MEDIÇÃO:</b> '+refsAtivas.map(function(r){var cp=compPeriodos(r);return '<b>'+r+'</b>'+(cp?' — período do ponto: '+cp.ponto+' · período da medição: '+cp.med:'')}).join('  |  ')+' · <span style="color:var(--dm)">O espelho de ponto (16→15) alimenta a medição do mesmo mês de competência (21→20).</span></div>';
+   })()
   // KPIs
   +'<div class="g g5" style="margin-bottom:8px">'
   +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')+kpi('HE 50%',h2hm(tot.he50),'var(--ca)')+kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
@@ -6654,7 +6688,9 @@ function renderRobo(){
   // barra de ações
   +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
   +'<span style="font-size:9px;font-weight:700;color:var(--dm)">REFERÊNCIA:</span>'
-  +'<select id="roboRef" onchange="renderRobo()" style="font-size:10px;padding:4px 8px;font-weight:700">'+(refs.length?refs.map(function(r){return '<option '+(r===refAtual?'selected':'')+'>'+r+'</option>'}).join(''):'<option value="">—</option>')+'</select>'
+  +'<select id="roboRef" onchange="renderRobo()" style="font-size:10px;padding:4px 8px;font-weight:700">'
+  +'<option value="__auto__" '+(modo==='__auto__'?'selected':'')+'>🔗 Seguir filtro de meses'+(refsAtivas.length?' ('+refsAtivas.join(', ')+')':'')+'</option>'
+  +refs.map(function(r){return '<option '+(r===modo?'selected':'')+'>'+r+'</option>'}).join('')+'</select>'
   +'<button onclick="roboExportXLSX()" style="font-size:9px;font-weight:700;padding:5px 10px;background:var(--gn);color:#fff;border:none;border-radius:6px;cursor:pointer">📥 Exportar Excel (fórmulas)</button>'
   +'<button onclick="roboImprimir()" style="font-size:9px;font-weight:700;padding:5px 10px;border:1px solid var(--bd);border-radius:6px;cursor:pointer;background:transparent;color:var(--tx)">🖨 Imprimir</button>'
   +'<button onclick="roboAplicarBM()" style="font-size:9px;font-weight:700;padding:5px 10px;background:var(--co);color:#fff;border:none;border-radius:6px;cursor:pointer">💰 Aplicar no BM</button>'
@@ -6664,7 +6700,7 @@ function renderRobo(){
   +(semDepara.length?'<div style="font-size:9px;color:var(--rd);font-weight:700;margin-bottom:6px">⚠️ Funções sem De×Para definido: '+semDepara.join(', ')+' — ajuste na tabela abaixo.</div>':'')
   // consolidação por função QQP
   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">'
-  +'<div><div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:4px">📊 CONSOLIDAÇÃO POR FUNÇÃO COBRADA (QQP)'+(refAtual?' · '+refAtual:'')+'</div>'
+  +'<div><div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:4px">📊 CONSOLIDAÇÃO POR FUNÇÃO COBRADA (QQP)'+(refsAtivas.length?' · '+refsAtivas.join(' + '):'')+'</div>'
   +'<div style="max-height:280px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">'
   +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Função</th><th>Colab</th><th>HN</th><th>50%</th><th>100%</th><th>150%</th><th>ADN</th><th>R$ BM</th></tr>'
   +Object.keys(con.porFunc).sort().map(function(f){var a=con.porFunc[f];var vr=0;
