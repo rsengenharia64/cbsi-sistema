@@ -6739,6 +6739,180 @@ function roboDesfazerBM(){
 }
 
 // ---------------------------------------------------------------------------
+// PAINEL DE PINTURA — importação COMPLETA da planilha oficial (rev14+)
+// O uploadPintXLSX original só atualizava laudos já existentes (base rev04),
+// só entendia 3 status e não persistia. Este importador lê as abas
+// "Controle Laudos_Meta" + "Controle Produtividade_ForaMeta" + "Síntese",
+// atualiza TUDO (inclui laudos novos, todos os status, data de corte),
+// salva no navegador e reaplica a cada abertura do sistema.
+// ---------------------------------------------------------------------------
+function getPintLaudos(){try{return PINT_LAUDOS}catch(e){return window.PINT_LAUDOS||null}}
+function getPintMeta(){try{return PINT_META}catch(e){return window.PINT_META||null}}
+function pintNum(v){
+  if(typeof v==='number')return v;
+  if(v==null)return 0;
+  var s=String(v).replace(/m²|m2/gi,'').trim();
+  if(/,\d{2}$/.test(s))s=s.replace(/\./g,'').replace(',','.');else s=s.replace(/,(?=\d{3}\b)/g,'');
+  var n=parseFloat(s);return isNaN(n)?0:n;
+}
+function pintData(v){ // serial Excel ou texto → 'dd/mm'
+  if(typeof v==='number'&&v>20000){var d=new Date(Math.round((v-25569)*86400000));return ('0'+d.getUTCDate()).slice(-2)+'/'+('0'+(d.getUTCMonth()+1)).slice(-2)}
+  var m=String(v||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if(m)return ('0'+m[1]).slice(-2)+'/'+('0'+m[2]).slice(-2);
+  return '';
+}
+function pintDataFull(v){
+  if(typeof v==='number'&&v>20000){var d=new Date(Math.round((v-25569)*86400000));return ('0'+d.getUTCDate()).slice(-2)+'/'+('0'+(d.getUTCMonth()+1)).slice(-2)+'/'+d.getUTCFullYear()}
+  var m=String(v||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if(m){var y=m[3].length===2?('20'+m[3]):m[3];return ('0'+m[2]).slice(-2)+'/'+('0'+m[1]).slice(-2)+'/'+y} // texto americano m/d/y da Síntese
+  return '';
+}
+function pintStatusNorm(s){
+  var t=normTxt(s);
+  if(!t)return 'A INICIAR';
+  if(t.indexOf('CONCLU')>=0)return 'CONCLUÍDO';
+  if(t.indexOf('EXEC')>=0)return 'EM EXECUÇÃO';
+  if(t.indexOf('PARC')>=0)return 'PARCIAL';
+  if(t.indexOf('REPROG')>=0)return 'REPROGRAMAR';
+  if(t.indexOf('INICIAR')>=0||t.indexOf('INIC')===0)return 'A INICIAR';
+  if(t.indexOf('CANCEL')>=0)return 'CANCELADO';
+  if(t.indexOf('PROG')>=0)return 'PROGRAMADO';
+  return String(s).toUpperCase();
+}
+function pintAcharHeader(rows,chave){
+  for(var i=0;i<Math.min(rows.length,15);i++){
+    var r=rows[i];if(!r)continue;
+    if(r.some(function(c){return normTxt(c).indexOf(chave)>=0}))return i;
+  }
+  return -1;
+}
+function pintImportarPlanilha(wb,fonteNome){
+  var L=getPintLaudos();if(!L)throw new Error('PINT_LAUDOS indisponível');
+  var META=getPintMeta()||{};
+  var idx={};L.forEach(function(l,i){idx[String(l.l).trim()]=i});
+  // rota → terminal aprendido dos laudos já conhecidos
+  var atualizados=0,novos=0;
+  function aplica(l,campos){
+    var i=idx[l];
+    if(i==null){
+      var novo={t:campos.t||'NA',a:campos.a||'',r:campos.r||'',l:l,om:campos.om||'',pg:campos.pg||'',pm:campos.pm||'',
+        diBL:campos.diBL||'',dfBL:campos.dfBL||'',diProg:campos.diProg||'',dfProg:campos.dfProg||'',diTend:campos.diTend||'',dfTend:campos.dfTend||'',
+        di:campos.di||'',df:campos.df||'',sapDt:campos.sapDt||'',m2l:campos.m2l||0,m2a:campos.m2a||0,m2p:campos.m2p||0,
+        m2e:campos.m2e||0,m2pend:campos.m2pend||0,st:campos.st||'A INICIAR',obs:campos.obs||'',visita:'',medCompl:''};
+      L.push(novo);idx[l]=L.length-1;novos++;
+    }else{
+      var ex=L[i];
+      ['a','r','om','pg','pm','diBL','dfBL','diProg','dfProg','diTend','dfTend','di','df','m2l','m2a','m2p','m2e','m2pend','st','obs'].forEach(function(k){
+        if(campos[k]!=null&&campos[k]!==''&&campos[k]!==0)ex[k]=campos[k];
+        else if(k==='m2e'&&campos.m2e===0&&ex.st!=='CONCLUÍDO')ex.m2e=0;
+      });
+      if(campos.t&&campos.t!=='NA')ex.t=campos.t;
+      atualizados++;
+    }
+  }
+  // ---- aba META ----
+  var shM=wb.SheetNames.filter(function(n){return /LAUDOS?_?META/i.test(normTxt(n))})[0];
+  if(!shM)throw new Error('aba "Controle Laudos_Meta" não encontrada');
+  var rowsM=XLSX.utils.sheet_to_json(wb.Sheets[shM],{header:1,raw:true});
+  var hM=pintAcharHeader(rowsM,'LAUDO');
+  if(hM<0)throw new Error('cabeçalho da aba Meta não encontrado');
+  var rotaTerm={};L.forEach(function(l){if(l.t&&l.t!=='NA'&&l.a)rotaTerm['A:'+normTxt(l.a)]=l.t});
+  rowsM.slice(hM+1).forEach(function(r){
+    if(!r)return;var laudo=String(r[3]||'').trim();
+    if(!/^\d{6,}/.test(laudo))return;
+    var rota=String(r[0]||'').trim();
+    var exId=idx[laudo];
+    var term=(exId!=null)?L[exId].t:(rotaTerm['R:'+normTxt(rota)]||rotaTerm['A:'+normTxt(String(r[1]||''))]||'NA');
+    if(exId!=null&&rota)rotaTerm['R:'+normTxt(rota)]=L[exId].t;
+    aplica(laudo,{t:term,a:String(r[1]||'').trim(),r:String(r[2]||'').trim(),om:String(r[4]||'').trim(),
+      pg:String(r[5]||'').trim()==='BASELINE'?(L[exId]?L[exId].pg:'BL'):String(r[5]||'').trim(),pm:String(r[6]||'').trim(),
+      diBL:pintData(r[7]),dfBL:pintData(r[8]),diProg:pintData(r[10]),dfProg:pintData(r[11]),
+      diTend:pintData(r[13]),dfTend:pintData(r[14]),di:pintData(r[16]),df:pintData(r[17]),
+      m2l:pintNum(r[19]),m2a:pintNum(r[20]),m2p:pintNum(r[20]),m2e:pintNum(r[21]),m2pend:pintNum(r[22]),
+      st:pintStatusNorm(r[23]),obs:String(r[24]||'').trim()});
+  });
+  // segunda passada para rotas que só ganharam terminal depois
+  // ---- aba FORA META ----
+  var shF=wb.SheetNames.filter(function(n){return /FORA\s*META/i.test(normTxt(n))})[0];
+  var m2Fora=0;
+  if(shF){
+    var rowsF=XLSX.utils.sheet_to_json(wb.Sheets[shF],{header:1,raw:true});
+    var hF=pintAcharHeader(rowsF,'LAUDO');
+    var termFF=null;
+    rowsF.slice(hF+1).forEach(function(r){
+      if(!r)return;
+      if(r[0])termFF=String(r[0]).trim();
+      var laudo=String(r[3]||'').trim();
+      if(!/^\d{6,}/.test(laudo))return;
+      var m2e=pintNum(r[16]);m2Fora+=m2e;
+      aplica(laudo,{t:termFF||'NA',a:String(r[1]||'').trim(),r:String(r[2]||'').trim(),om:String(r[4]||'').trim(),
+        pg:'EXTRA',pm:'EXTRA',diBL:pintData(r[7]),dfBL:pintData(r[8]),diTend:pintData(r[9]),dfTend:pintData(r[10]),
+        di:pintData(r[11]),df:pintData(r[12]),m2l:pintNum(r[13]),m2a:pintNum(r[14]),m2p:pintNum(r[15]),
+        m2e:m2e,m2pend:pintNum(r[17]),st:pintStatusNorm(r[18])});
+    });
+  }
+  // ---- Síntese: data de corte ----
+  var corte='';
+  var shS=wb.SheetNames.filter(function(n){return /SINTESE/i.test(normTxt(n))})[0];
+  if(shS){
+    var rowsS=XLSX.utils.sheet_to_json(wb.Sheets[shS],{header:1,raw:true});
+    for(var i=0;i<Math.min(rowsS.length,30);i++){
+      var r=rowsS[i]||[];
+      var j=r.findIndex(function(c){return normTxt(c).indexOf('DATA DE CORTE')>=0||normTxt(c).indexOf('DATA CORTE')>=0});
+      if(j>=0){
+        var v=(r[j+1]!=null&&r[j+1]!=='')?r[j+1]:((rowsS[i+1]||[])[j]);
+        corte=pintDataFull(v);if(corte)break;
+      }
+    }
+  }
+  // ---- recalcular KPIs ----
+  var metaL=L.filter(function(l){return l.pg!=='EXTRA'&&l.pm!=='EXTRA'&&l.st!=='CANCELADO'});
+  var m2Real=0;metaL.forEach(function(l){m2Real+=(+l.m2e||0)});
+  m2Fora=0;L.forEach(function(l){if(l.pg==='EXTRA'||l.pm==='EXTRA')m2Fora+=(+l.m2e||0)});
+  META.m2Real=Math.round(m2Real*100)/100;
+  META.m2ForaMeta=Math.round(m2Fora*100)/100;
+  META.m2Total=Math.round((m2Real+m2Fora)*100)/100;
+  META.laudoMeta=metaL.length;
+  META.laudoExec=metaL.filter(function(l){return l.st==='CONCLUÍDO'}).length;
+  // ---- persistir + reaplicar ----
+  var snap={laudos:L.map(function(l){return l}),meta:{m2Real:META.m2Real,m2ForaMeta:META.m2ForaMeta,m2Total:META.m2Total,laudoMeta:META.laudoMeta,laudoExec:META.laudoExec},
+    corte:corte,fonte:fonteNome,quando:new Date().toLocaleString('pt-BR')};
+  lss('cbsi-v15-pint-full',snap);
+  window.__PINT_IMPORT=snap;
+  try{buildPintura()}catch(e){}
+  try{R()}catch(e){}
+  setTimeout(fixPintFonte,300);
+  rlog('Pintura','Importação completa',fonteNome+' → '+atualizados+' atualizados, '+novos+' novos'+(corte?(', corte '+corte):''));
+  return{atualizados:atualizados,novos:novos,corte:corte};
+}
+// reaplica o snapshot salvo ao abrir o sistema (o original não persistia os laudos)
+function pintReaplicarSnapshot(){
+  var snap=lsg('cbsi-v15-pint-full',null);
+  if(!snap||!snap.laudos||!snap.laudos.length)return false;
+  var L=getPintLaudos();if(!L)return false;
+  L.length=0;snap.laudos.forEach(function(l){L.push(l)});
+  var META=getPintMeta();if(META&&snap.meta)Object.assign(META,snap.meta);
+  window.__PINT_IMPORT=snap;
+  return true;
+}
+// corrige os rótulos fixos "rev04 / Data Corte 25/03/2026" na tela
+function fixPintFonte(){
+  var snap=window.__PINT_IMPORT;if(!snap)return;
+  ['p-pint','p-dados','p-dash','p-opr'].forEach(function(pid){
+    var pg=document.getElementById(pid);if(!pg)return;
+    var els=pg.querySelectorAll('div,span,b');
+    for(var i=0;i<els.length;i++){
+      var el=els[i];if(el.children.length)continue;
+      var t=el.textContent||'';
+      var novo=t;
+      if(t.indexOf('Painel_de_Pintura_2026_rev04.xlsx')>=0)novo=novo.replace('Painel_de_Pintura_2026_rev04.xlsx',snap.fonte||'Painel de Pintura (Drive)');
+      if(snap.corte&&/Data Corte:\s*\d{2}\/\d{2}\/\d{4}/.test(t))novo=novo.replace(/Data Corte:\s*\d{2}\/\d{2}\/\d{4}/,'Data Corte: '+snap.corte);
+      if(novo!==t)el.textContent=novo;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // GOOGLE DRIVE (leitura automática — requer pasta pública + chave de API)
 // ---------------------------------------------------------------------------
 var DRIVE_PASTAS_PADRAO={ // IDs reais mapeados da pasta oficial CBSI (Mapa das pastas Rede)
@@ -6868,17 +7042,31 @@ function driveBmsAuto(files){
 function drivePintAuto(files){
   var f=acharUltimoXlsx(files);
   if(!f)return;
-  var marca=f.id+'|'+f.modifiedTime;
+  var marca=f.id+'|'+f.modifiedTime+'|v2';
   if(DRIVE_CFG.status.pintImport&&DRIVE_CFG.status.pintImport.marca===marca)return;
-  if(typeof window.uploadPintXLSX!=='function'&&typeof uploadPintXLSX!=='function')return;
-  driveDownload(f.id).then(function(buf){
-    DRIVE_CFG.status.pintImport={marca:marca,arquivo:f.name,quando:new Date().toLocaleString('pt-BR')};driveSave();
-    var fn=(typeof uploadPintXLSX==='function')?uploadPintXLSX:window.uploadPintXLSX;
-    fn(new File([buf],f.name));
-    rlog('Drive Pintura','Importar painel',f.name);
-    rtoast('\ud83c\udfa8 Painel de Pintura atualizado do Drive: '+f.name);
-  }).catch(function(e){console.warn('Pint import:',e)});
+  ensureXLSX().then(function(){return driveDownload(f.id)}).then(function(buf){
+    var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+    var r=pintImportarPlanilha(wb,f.name);
+    DRIVE_CFG.status.pintImport={marca:marca,arquivo:f.name,quando:new Date().toLocaleString('pt-BR'),atu:r.atualizados,novos:r.novos,corte:r.corte};driveSave();
+    rlog('Drive Pintura','Importar painel',f.name+' -> '+r.atualizados+' atualizados, '+r.novos+' novos');
+    rtoast('\ud83c\udfa8 Painel de Pintura importado do Drive: '+r.atualizados+' laudos atualizados + '+r.novos+' novos'+(r.corte?(' \u00b7 corte '+r.corte):''));
+  }).catch(function(e){console.warn('Pint import:',e);rtoast('\u274c Pintura: '+e.message)});
 }
+// upload manual da planilha de pintura tamb\u00e9m passa pelo importador completo
+(function(){
+  var _upOrig=null;try{_upOrig=window.uploadPintXLSX}catch(e){}
+  window.uploadPintXLSX=function(file){
+    if(!file){rtoast('Selecione arquivo');return}
+    ensureXLSX().then(function(){return file.arrayBuffer()}).then(function(buf){
+      var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+      var r=pintImportarPlanilha(wb,file.name);
+      rtoast('\ud83c\udfa8 '+file.name+': '+r.atualizados+' laudos atualizados + '+r.novos+' novos'+(r.corte?(' \u00b7 corte '+r.corte):''));
+    }).catch(function(e){
+      console.warn('Pint upload novo falhou, tentando rotina antiga:',e);
+      if(_upOrig)_upOrig(file);else rtoast('\u274c '+e.message);
+    });
+  };
+})();
 var _driveTimer=null;
 function driveAutoStart(){
   if(_driveTimer)clearInterval(_driveTimer);
@@ -7147,6 +7335,19 @@ try{
 
 // propaga a referência de dias ao CFG global (Motor/Planejamento/Índices)
 try{if(typeof CFG!=='undefined'&&CFG){CFG.diasUteis=PROD_PARAMS.diasRef}}catch(e){}
+// reaplica a última importação do Painel de Pintura (o sistema original não persistia os laudos)
+try{
+  if(pintReaplicarSnapshot()){
+    try{buildPintura()}catch(e){}
+    console.log('🎨 Painel de Pintura: snapshot importado reaplicado');
+  }
+  // rótulos de fonte/data de corte corrigidos após cada render
+  var _bpOrig=window.buildPintura;
+  if(typeof _bpOrig==='function'){window.buildPintura=function(){var r=_bpOrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
+  var _ROrig=window.R;
+  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
+  setTimeout(function(){try{fixPintFonte()}catch(e){}},1500);
+}catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
 try{fixMetricasJornada()}catch(e){}
 try{renderRobo()}catch(e){console.warn('Robo init:',e)}
