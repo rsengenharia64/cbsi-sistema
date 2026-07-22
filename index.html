@@ -6290,7 +6290,10 @@ var DRIVE_PASTAS_PADRAO={ // IDs reais mapeados da pasta oficial CBSI (Mapa das 
   bms:'1xhuYRj1l65d3SabUpFES26AnwtnZEkZV',
   pint:'1R9vQJ1swO73sa2CySX0hdifEBx-aECcl',
   andaimes:'1s9R7Wc1Sjofu9SNMAK1idd9Kv8tNquQm'};
-var DRIVE_CFG=lsg('cbsi-v15-drive-cfg',{apiKey:'',pastas:{},status:{},autoMin:10});
+// Chave publica de leitura (restrita no Google Cloud: so funciona em rsengenharia64.github.io e so le a API do Drive)
+var DRIVE_KEY_PADRAO='AIzaSyB36Xhk7g7ZkzXrtGERmNXZpeUpbcHSZeE';
+var DRIVE_CFG=lsg('cbsi-v15-drive-cfg',{apiKey:DRIVE_KEY_PADRAO,pastas:{},status:{},autoMin:10});
+if(!DRIVE_CFG.apiKey)DRIVE_CFG.apiKey=DRIVE_KEY_PADRAO;
 Object.keys(DRIVE_PASTAS_PADRAO).forEach(function(k){if(!DRIVE_CFG.pastas[k])DRIVE_CFG.pastas[k]=DRIVE_PASTAS_PADRAO[k]});
 if(DRIVE_CFG.autoMin==null)DRIVE_CFG.autoMin=10;
 function driveSave(){lss('cbsi-v15-drive-cfg',DRIVE_CFG)}
@@ -6468,7 +6471,7 @@ function renderRobo(){
   +'<button onclick="driveMonitor()" style="font-size:9px;padding:4px 10px;background:var(--cs);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">🔄 Atualizar agora</button></div>'
   +[['ponto','📄 Ponto (espelhos PDF — processa sozinho)'],['rdc','📝 RDC Campo'],['bms','💰 BMS / Medições'],['pint','🎨 Painel de Pintura'],['andaimes','🏗️ Projetos Andaimes']].map(function(par){
      var st=DRIVE_CFG.status[par[0]];
-     return '<div style="display:flex;justify-content:space-between;gap:6px;font-size:8px;border-bottom:1px solid var(--bd);padding:3px 0"><span style="font-weight:700">'+par[1]+'</span><span id="drvMon-'+par[0]+'" style="color:var(--dm);text-align:right">'+(st?('✅ '+st.qtde+' arquivo(s) · '+st.quando):'aguardando chave de API')+'</span></div>'}).join('')
+     return '<div style="display:flex;justify-content:space-between;gap:6px;font-size:8px;border-bottom:1px solid var(--bd);padding:3px 0"><span style="font-weight:700">'+par[1]+'</span><span id="drvMon-'+par[0]+'" style="color:var(--dm);text-align:right">'+(st?('✅ '+st.qtde+' arquivo(s) · '+st.quando):'aguardando primeira verificação')+'</span></div>'}).join('')
   +'</div></div>'
   +'</div>';
   function kpi(l,v,c){return '<div style="border:1px solid var(--bd);border-radius:8px;padding:8px;text-align:center"><div style="font-size:8px;color:var(--dm);font-weight:700">'+l+'</div><div style="font-size:16px;font-weight:800;color:'+c+'">'+v+'</div></div>'}
