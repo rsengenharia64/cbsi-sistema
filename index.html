@@ -6372,17 +6372,17 @@ function roboFiltroAtivo(){
   var meses=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)meses=[...SM].sort(function(a,b){return a-b})}catch(e){}
   var ano=(typeof Y!=='undefined')?Y:(new Date()).getFullYear();
   if(!meses.length)return{modo:modo,regs:ROBO_LANC.slice(),rotulo:'GERAL',titulo:'Todas as competências (nenhum mês selecionado no filtro global)',periodos:[]};
-  // inteligência da seleção: como a apuração da competência JUL cobre 21/06–20/07, o usuário
-  // seleciona JUN+JUL no cabeçalho para enxergar a janela toda — isso é UMA competência (JUL),
-  // não duas. Regra: numa sequência de meses consecutivos, o 1º mês só "abre a janela" e não
-  // vira competência própria; meses isolados continuam valendo como competência única.
+  // inteligência da seleção: a apuração da competência JUL cobre 21/06–20/07, então o usuário
+  // seleciona JUN+JUL no cabeçalho para enxergar a janela toda — isso é UMA competência (JUL).
+  // JUL+AGO = competência AGO; AGO+SET = competência SET, e assim por diante.
+  // Regra: cada sequência de meses consecutivos vale UMA única competência — a do ÚLTIMO mês
+  // da sequência. Nunca soma medições. Meses isolados valem cada um como sua própria competência.
   var mesesComp=[],reduzido=false;
   for(var i=0;i<meses.length;i++){
     var m=meses[i];
-    var inicioDeSeq=(i===0)||(meses[i-1]!==m-1);
     var temSeguinte=(i<meses.length-1)&&(meses[i+1]===m+1);
-    if(inicioDeSeq&&temSeguinte){reduzido=true;continue} // 1º mês de sequência 2+: só abre a janela
-    mesesComp.push(m);
+    if(temSeguinte){reduzido=true;continue} // ainda não é o fim da sequência
+    mesesComp.push(m); // fim de sequência ou mês isolado
   }
   if(!mesesComp.length)mesesComp=[meses[meses.length-1]];
   var pers=mesesComp.map(function(m){return{m:m,ano:ano,p:periodoDaCompetencia(m,ano)}});
@@ -7187,7 +7187,7 @@ function renderRobo(){
        +'<input type="number" min="1" max="31" value="'+ROBO_PARAMS.medIni+'" onchange="roboSetParam(\'medIni\',this.value)" style="width:44px;font-size:9px;padding:2px"> ao dia '
        +'<input type="number" min="1" max="31" value="'+ROBO_PARAMS.medFim+'" onchange="roboSetParam(\'medFim\',this.value)" style="width:44px;font-size:9px;padding:2px">'
        +' · Competência = <select onchange="roboSetParam(\'compOffset\',this.value)" style="font-size:8px"><option value="0" '+(+ROBO_PARAMS.compOffset===0?'selected':'')+'>mês do término (NF no mês seguinte)</option><option value="1" '+(+ROBO_PARAMS.compOffset===1?'selected':'')+'>mês seguinte ao término</option></select>'
-       +' · <span title="Ex.: medição fechada em 20/07 → competência JUL (apuração 21/06 a 20/07) → NF emitida em AGO. No filtro global, selecione JUN+JUL para ver a janela toda — o sistema entende como UMA competência (JUL).">ℹ️ regra</span>'
+       +' · <span title="Ex.: medição fechada em 20/07 → competência JUL (apuração 21/06 a 20/07) → NF emitida em AGO. No filtro global, uma sequência de meses vale UMA competência, a do último mês: JUN+JUL = JUL · JUL+AGO = AGO · AGO+SET = SET. Nunca soma medições.">ℹ️ regra</span>'
        +' · Espelho de ponto: '+ROBO_PARAMS.pontoIni+'→'+ROBO_PARAMS.pontoFim+' (a apuração é por DATA do lançamento, então funciona mesmo cruzando dois espelhos)'
        +'</div>';
      var selHE=function(k){var v=ROBO_PARAMS[k];return '<select onchange="roboSetParamStr(\''+k+'\',this.value)" style="font-size:8px">'+['he50','he100','he150'].map(function(o){return '<option value="'+o+'" '+(v===o?'selected':'')+'>'+o.replace('he','HE ')+'%</option>'}).join('')+'</select>'};
