@@ -7016,6 +7016,17 @@ function pintRecalcDerivados(corte){
         if(l.pg==='EXTRA'||l.pm==='EXTRA')exc[mm-1]++;
       });
       M.forEach(function(o,i){o.real=Math.round(real[i]*100)/100;o.laudos=laud[i];o.laudoExc=exc[i]});
+      // DEMANDA DISPONIBILIZADA mensal (m² ajustado por laudo, no mês do término programado):
+      // é a régua justa de produtividade — a demanda liberada pela VALE, não a capacidade teórica
+      var prog=[0,0,0,0,0,0,0,0,0,0,0,0];
+      L.forEach(function(l){
+        if(l.st==='CANCELADO')return;
+        var m2=+l.m2a||0;if(m2<=0)m2=+l.m2l||0;if(m2<=0)return;
+        var mm=parseInt(String(l.dfProg||l.dfBL||l.df||'').split('/')[1]);
+        if(!(mm>=1&&mm<=12))return;
+        prog[mm-1]+=m2;
+      });
+      M.forEach(function(o,i){if(prog[i]>0)o.prog=Math.round(prog[i]*100)/100});
       // RETROALIMENTAÇÃO → módulo de Lançamento (D.meses): o realizado mensal de pintura
       // passa a vir da planilha oficial (área realizada + laudos realizados por mês).
       // É isso que alimenta os cartões "LAUDOS MÊS / ÁREA MÊS", o gráfico Previsto×Realizado
@@ -7031,6 +7042,48 @@ function pintRecalcDerivados(corte){
       }catch(e){console.warn('retroalimentação D.meses:',e)}
     }
   }catch(e){console.warn('PINT_MES recalc:',e)}
+}
+// gráfico "Previsto vs Realizado" do Dashboard → 3 barras: Capacidade prevista ×
+// Demanda Disponibilizada (por laudo, da planilha) × Realizado, com % de aproveitamento.
+// Sem a barra de demanda, a equipe parece improdutiva quando a demanda liberada é
+// menor que a capacidade — esta visão corrige a leitura.
+function fixDashPrevReal(){
+  try{
+    var el=document.getElementById('chB');if(!el)return;
+    var M=null;try{M=PINT_MES}catch(e){M=window.PINT_MES}
+    if(!M||M.length!==12)return;
+    var MNn=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    var mx=1,bd=MNn.map(function(n,i){
+      var o=(typeof gm==='function')?gm(i+1):null;
+      var cap=o?(+o.ap||0):0, disp=+M[i].prog||0, re=+M[i].real||0;
+      mx=Math.max(mx,cap,disp,re);
+      return{n:n,cap:cap,disp:disp,re:re};
+    });
+    var fmv=function(x){return Math.round(x).toLocaleString('pt-BR')};
+    el.innerHTML=bd.map(function(d){
+      var ap=(d.disp>0&&d.re>0)?Math.round(d.re/d.disp*100):null;
+      return '<div class="bi" style="min-width:46px"><div class="bw" style="height:80px;gap:1px">'
+        +'<div class="bc" style="height:'+((d.cap/mx)*70).toFixed(1)+'px;background:rgba(7,69,108,.45);min-height:'+(d.cap>0?'3px':'1px')+';border-radius:2px 2px 0 0" title="Capacidade prevista: '+fmv(d.cap)+' m²"></div>'
+        +'<div class="bc" style="height:'+((d.disp/mx)*70).toFixed(1)+'px;background:#E0A800;min-height:'+(d.disp>0?'3px':'0')+';border-radius:2px 2px 0 0" title="Demanda disponibilizada: '+fmv(d.disp)+' m²"></div>'
+        +'<div class="bc" style="height:'+((d.re/mx)*70).toFixed(1)+'px;background:var(--co);min-height:'+(d.re>0?'3px':'0')+';border-radius:2px 2px 0 0" title="Realizado: '+fmv(d.re)+' m²"></div>'
+        +'</div><div class="bl" style="font-size:7px">'+d.n+'</div>'
+        +(d.re>0?('<div style="font-size:6px;color:var(--co);font-weight:700">'+fmv(d.re)+'</div>'):'<div style="font-size:6px;color:var(--dm)">—</div>')
+        +(ap!=null?('<div style="font-size:6px;color:#B8860B;font-weight:700">'+ap+'% dem.</div>'):'')
+        +'</div>';
+    }).join('');
+    var card=el.closest('.cd');
+    if(card){
+      var ct=card.querySelector('.ct');
+      if(ct&&ct.textContent.indexOf('Demanda')<0)ct.textContent='Capacidade × Demanda Disponibilizada × Realizado (m²)';
+      var somaD=0,somaR=0;bd.forEach(function(d){if(d.disp>0){somaD+=d.disp;somaR+=d.re}});
+      var apG=somaD>0?Math.round(somaR/somaD*100):0;
+      var leg=card.querySelector('div[style*="display:flex"]');
+      if(leg)leg.innerHTML='<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(7,69,108,.45)"></span>Capacidade prevista</span>'
+        +'<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:#E0A800"></span>Demanda disponibilizada (m² por laudo)</span>'
+        +'<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:var(--co)"></span>Realizado</span>'
+        +'<span style="margin-left:auto;font-weight:800;color:#B8860B">✔ Aproveitamento da demanda: '+apG+'%</span>';
+    }
+  }catch(e){console.warn('fixDashPrevReal:',e)}
 }
 // reaplica o snapshot salvo ao abrir o sistema (o original não persistia os laudos)
 function pintReaplicarSnapshot(){
@@ -7503,8 +7556,8 @@ try{
   var _bpOrig=window.buildPintura;
   if(typeof _bpOrig==='function'){window.buildPintura=function(){var r=_bpOrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
   var _ROrig=window.R;
-  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
-  setTimeout(function(){try{fixPintFonte()}catch(e){}},1500);
+  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}return r}}
+  setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}},1500);
 }catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
 try{fixMetricasJornada()}catch(e){}
