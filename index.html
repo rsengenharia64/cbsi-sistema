@@ -5959,11 +5959,16 @@ function bmTipoMatch(dNorm,tipo){
 }
 function bmItemDe(func,tipo){
   var fn=normTxt(func);
-  return getBM().find(function(i){
+  // 1º: item com sufixo explícito do tipo ("... - Hora Normal", "... 50%")
+  var it=getBM().find(function(i){
     if(i.t!=='HH')return false;
     var d=normTxt(i.d);
-    return d.indexOf(fn)===0 && bmTipoMatch(d,tipo);
+    return d.indexOf(fn)===0 && d!==fn && bmTipoMatch(d,tipo);
   });
+  if(it)return it;
+  // 2º: funções administrativas têm item único sem sufixo (Coordenador, Engenheiro de Segurança…) = Hora Normal
+  if(tipo==='HN')it=getBM().find(function(i){return i.t==='HH'&&normTxt(i.d)===fn});
+  return it;
 }
 
 // ---------------------------------------------------------------------------
@@ -6060,7 +6065,7 @@ function pdfOcrLines(pdf,numPages,onProg){
 // ---------------------------------------------------------------------------
 // PARSER DO ESPELHO DE PONTO (formato oficial RH/SAP CBSI)
 // ---------------------------------------------------------------------------
-var RX_DIA=/^(\d{2}\/\d{2}\/\d{2})\s+(Seg|Ter|Qua|Qui|Sex|S[áa]b|Dom)\s*(.*)$/;
+var RX_DIA=/^(\d{2}\/\d{2}\/\d{2}(?:\d{2})?)\s+(Seg|Ter|Qua|Qui|Sex|S[áa]b|Dom)\s*(.*)$/;
 var RX_HORA=/(\d{1,2}:\d{2})\s*([EAD])/g;
 var RX_CONTA=/(Hora Extra 50%|Hora Extra 100%|Hora Extra 150%|HE 150% Pagar|Adic\.? ?Not\.? ?Informativo|Adic ?Not ?HE ?50%|Adic ?Not ?HE ?100%|Ad ?Not ?HE ?150%|Atraso[^\d]*|Aus[êe]ncia[^\d]*|Falta[^\d]*|Licen[çc]a[^\d]*|Sa[íi]da[^\d]*|Afastam\.?[^\d]*|Interjornada[^\d]*|Aguardando[^\d]*|Treinamento|Exame[^\d]*|Presen[çc]a)\s+([\d]{1,2}[:,][\d]{2})/g;
 
@@ -6075,7 +6080,8 @@ function parseEspelhos(lines){
     if((m=ln.match(RX_DIA))){
       var resto=m[3]||'';
       var phm=resto.match(/^([A-Z0-9]{3,5})\b/);
-      var dia={data:m[1],dow:m[2],phtd:phm?phm[1]:'',marcas:[],contas:[]};
+      var dNorm=m[1].length>8?(m[1].slice(0,6)+m[1].slice(8)):m[1]; // dd/mm/yyyy → dd/mm/yy (padrão interno)
+      var dia={data:dNorm,dow:m[2],phtd:phm?phm[1]:'',marcas:[],contas:[]};
       var hm;RX_HORA.lastIndex=0;
       while((hm=RX_HORA.exec(resto)))dia.marcas.push(hm[1]);
       var cm;RX_CONTA.lastIndex=0;
@@ -6171,7 +6177,7 @@ function parseManualPonto(lines){
 // sobreposição (em horas) do intervalo [a,b] com a janela noturna 22h–5h
 function overlapNoturno(a,b){
   function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
-  return ov(a,b,0,5)+ov(a,b,22,29)+ov(a,b,24,29);
+  return ov(a,b,0,5)+ov(a,b,22,29); // [22,29] já cobre a madrugada de turnos que viram a meia-noite
 }
 // classifica um dia do ponto manual pelas regras editáveis
 function calcManualDia(dia){
@@ -6210,7 +6216,7 @@ function processarManual(lines,file,st){
   if(!blocos.length)throw new Error('Nenhum cartão de ponto manual reconhecido em '+file.name);
   // reprocessamento idempotente: remove lançamentos anteriores deste mesmo arquivo
   ROBO_LANC=ROBO_LANC.filter(function(l){return l.arq!==file.name});
-  var semCad=[],conflitos=0,totalDias=0;
+  var semCad=[],conflitos=0,totalDias=0,vistoNoArq={};
   blocos.forEach(function(b){
     var ef=efetByNome(b.nome);
     if(!ef)semCad.push(b.nome);
@@ -6221,14 +6227,20 @@ function processarManual(lines,file,st){
       var c=calcManualDia(dia);
       var d2=('0'+dia.dt.getDate()).slice(-2)+'/'+('0'+(dia.dt.getMonth()+1)).slice(-2)+'/'+String(dia.dt.getFullYear()).slice(-2);
       var nomeN=normTxt(ef?ef.nome:b.nome);
-      // guarda de duplicidade contra o espelho RH: se o RH já tem horas nesse dia, o manual não entra;
-      // se o RH tem o dia ZERADO (caso típico dos cargos de confiança), a linha zerada é substituída
+      // dedup dentro do próprio arquivo (cartão repetido/página re-escaneada): 1ª ocorrência vale
+      var chave=nomeN+'|'+d2;
+      if(vistoNoArq[chave])return;vistoNoArq[chave]=1;
+      // guarda de duplicidade:
+      // · linha MANUAL de outro arquivo no mesmo dia → substituível (a versão nova assume)
+      // · linha do espelho RH com horas (trab/HE150/ADN) → o RH é oficial, o manual não entra
+      // · linha do RH zerada (caso típico dos cargos de confiança) → substituída pelo manual
       var rhComHoras=false;
       ROBO_LANC=ROBO_LANC.filter(function(l){
         if(l.arq===file.name)return true;
         if(l.data===d2&&normTxt(l.nome)===nomeN){
-          if((+l.trab||0)>0||(+l.he150||0)>0){rhComHoras=true;return true}
-          return false; // remove a linha zerada do RH — o manual assume o dia
+          if(l.phtd==='MAN'||(l.obs||'').indexOf('PONTO MANUAL')===0)return false; // manual antigo sai
+          if((+l.trab||0)>0||(+l.he150||0)>0||(+l.adn||0)>0){rhComHoras=true;return true}
+          return false; // linha zerada do RH — o manual assume o dia
         }
         return true;
       });
@@ -6240,7 +6252,8 @@ function processarManual(lines,file,st){
       totalDias++;
     });
   });
-  ROBO_ARQS.unshift({nome:file.name,quando:new Date().toLocaleString('pt-BR'),colabs:blocos.length,dias:totalDias,ref:(blocos[0]&&blocos[0].fim)?('MANUAL '+blocos[0].fim.slice(3)):'MANUAL'});
+  ROBO_ARQS=ROBO_ARQS.filter(function(a){return a.nome!==file.name});
+  ROBO_ARQS.unshift({nome:file.name,fid:file._fid||'',quando:new Date().toLocaleString('pt-BR'),colabs:blocos.length,dias:totalDias,ref:(blocos[0]&&blocos[0].fim)?('MANUAL '+blocos[0].fim.slice(3)):'MANUAL'});
   roboSave();
   rlog('Robô de Ponto','Ponto Manual',file.name+' → '+blocos.length+' colaboradores, '+totalDias+' dias');
   if(st)st.textContent='🖋 '+file.name+': '+blocos.length+' cartões manuais processados'+(semCad.length?(' · ⚠️ sem cadastro: '+semCad.join(', ')):'')+(conflitos?(' · '+conflitos+' dia(s) já tinham horas no RH (mantido o RH)'):'');
@@ -6272,14 +6285,24 @@ function roboProcessarPdf(file,statusEl){
       var cargo=ef?ef.cargo:'(sem cadastro)';
       var funcQ=ROBO_DEPARA[normTxt(cargo)]||ROBO_DEPARA[cargo]||'';
       // remove lançamentos anteriores do mesmo colaborador+ref (reprocessamento idempotente)
-      ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.id===b.id&&l.ref===b.ref)});
+      // — preservando os lançamentos do PONTO MANUAL (phtd 'MAN'), que têm fonte própria
+      ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.id===b.id&&l.ref===b.ref&&l.phtd!=='MAN')});
       b.dias.forEach(function(d){
         var c=calcDia(d);
+        // convivência com o PONTO MANUAL no mesmo dia: RH zerado → o manual assume (não insere);
+        // RH com horas → o RH é oficial (remove a linha manual do dia)
+        var nomeN=normTxt(ef?ef.nome:b.nome);
+        var manualJa=ROBO_LANC.some(function(l){return l.phtd==='MAN'&&l.data===d.data&&(l.id===b.id||normTxt(l.nome)===nomeN)});
+        if(manualJa){
+          if(c.trab<=0&&c.he150<=0)return;
+          ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.phtd==='MAN'&&l.data===d.data&&(l.id===b.id||normTxt(l.nome)===nomeN))});
+        }
         ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; '),arq:file.name});
       });
       novos++;
     });
-    ROBO_ARQS.unshift({nome:file.name,quando:new Date().toLocaleString('pt-BR'),colabs:blocos.length,dias:blocos.reduce(function(s,b){return s+b.dias.length},0),ref:blocos[0].ref});
+    ROBO_ARQS=ROBO_ARQS.filter(function(a){return a.nome!==file.name});
+    ROBO_ARQS.unshift({nome:file.name,fid:file._fid||'',quando:new Date().toLocaleString('pt-BR'),colabs:blocos.length,dias:blocos.reduce(function(s,b){return s+b.dias.length},0),ref:blocos[0].ref});
     roboSave();
     rlog('Robô de Ponto','Processar PDF',file.name+' → '+novos+' colaboradores');
     st('✅ '+file.name+': '+novos+' colaboradores processados'+(semCad.length?(' · ⚠️ sem cadastro: '+semCad.length):''));
@@ -6334,7 +6357,7 @@ function roboRefAtivas(){
   return [v];
 }
 // ---- MOTOR DE APURAÇÃO POR PERÍODO (dia a dia, independente do espelho de origem) ----
-function dataBR(s){var p=String(s||'').split('/');return new Date(2000+(+p[2]),(+p[1])-1,+p[0])}
+function dataBR(s){var p=String(s||'').split('/');var y=+p[2];if(y<100)y+=2000;return new Date(y,(+p[1])-1,+p[0])}
 function fmtD(d){return pad2(d.getDate())+'/'+pad2(d.getMonth()+1)+'/'+d.getFullYear()}
 // período de apuração da MEDIÇÃO para uma competência (mes 1..12, ano)
 // regra padrão (offset 0): competência JUL = apuração 21/06 a 20/07 (competência = mês do TÉRMINO);
@@ -6410,9 +6433,17 @@ window.roboSetAte=function(v){ROBO_UI.ate=v;roboUISave();renderRobo()};
 window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
 window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 window.roboSetParamStr=function(k,v){ROBO_PARAMS[k]=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
+window.roboSetFeriados=function(v){
+  ROBO_PARAMS.feriados=String(v||'').split(/[,;]/).map(function(s){return s.trim()}).filter(function(s){return /^\d{2}\/\d{2}\/\d{4}$/.test(s)});
+  lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo();rtoast('📅 '+ROBO_PARAMS.feriados.length+' feriados salvos');
+};
 // ---- CAPACIDADE PRODUTIVA POR DISCIPLINA (efetivo do mes x HH x metas) ----
 var PROD_PARAMS=lsg('cbsi-v15-prod-params',{diasRef:24,pintM2Dia:6.94,andM3HH:1.8,eletroKgHH:10,custoHH:45});
-window.prodSetParam=function(k,v){PROD_PARAMS[k]=+String(v).replace(',','.');lss('cbsi-v15-prod-params',PROD_PARAMS);renderRobo();try{fixMetricasJornada()}catch(e){}};
+window.prodSetParam=function(k,v){
+  PROD_PARAMS[k]=+String(v).replace(',','.');lss('cbsi-v15-prod-params',PROD_PARAMS);
+  if(k==='diasRef'){try{CFG.diasUteis=PROD_PARAMS.diasRef;persistAll()}catch(e){}try{R()}catch(e){}}
+  renderRobo();try{fixMetricasJornada()}catch(e){}
+};
 var CARGOS_PINT=['PINTOR INDUSTRIAL I','PINTOR JATISTA','PINTOR ESCALADOR I','PINTOR LETRISTA'];
 var CARGOS_AND=['MONTADOR ANDAIMES','LIDER ANDAIME I'];
 var CARGOS_ELETRO=['CALDEIREIRO I','SOLDADOR RX','MECANICO MONTADOR I','ELETRICISTA MANUTENCAO I','LIDER MECANICA I'];
@@ -6691,7 +6722,7 @@ function roboExportSimples(){
       var c=par.split('|');
       wsQ[c[0]+r]={t:'n',f:'SUMIFS(Detalhe!'+c[1]+'2:'+c[1]+nDet+',Detalhe!J2:J'+nDet+',A'+r+')'};
     });
-    wsQ['H'+r]={t:'n',f:'SUM(C'+r+':G'+r+')'};
+    wsQ['H'+r]={t:'n',f:'SUM(C'+r+':F'+r+')'};
     // valor pelo PU do BM
     var f=qqp[r-1][0];var vr=0;
     ['HN','HE50','HE100','HE150','ADN'].forEach(function(t,ti){
@@ -6721,6 +6752,13 @@ function roboImprimir(){
 // ---------------------------------------------------------------------------
 // REPLICAR NO BM (não destrutivo, com backup e desfazer)
 // ---------------------------------------------------------------------------
+// o persistAll do sistema base NÃO salva o BM — estas duas funções cobrem a lacuna
+function bmPersist(){try{lss('cbsi-v15-bm-nm',getBM().map(function(i){return{it:i.it,nm:i.nm}}))}catch(e){}}
+function bmReaplicar(){
+  var s=lsg('cbsi-v15-bm-nm',null);if(!s||!s.length)return false;
+  var B=getBM();s.forEach(function(x){var it=B.find(function(i){return String(i.it)===String(x.it)});if(it)it.nm=x.nm});
+  return true;
+}
 function roboAplicarBM(){
   var FA=roboFiltroAtivo();var ref=FA.titulo||FA.rotulo;
   var con=roboConsolidaRegs(FA.regs);
@@ -6736,11 +6774,22 @@ function roboAplicarBM(){
       else if(par[1]>0)semItem.push(f+' · '+par[0]);
     });
   });
+  // itens aplicados numa competência anterior e ausentes na atual voltam ao valor original
+  // (senão o BM mistura competências)
+  var prevItens=lsg('cbsi-v15-robo-bmitens',[]);
+  prevItens.forEach(function(itId){
+    if(porItem[itId]!=null)return;
+    var bk=backup.find(function(b){return String(b.it)===String(itId)});
+    var it=getBM().find(function(i){return String(i.it)===String(itId)});
+    if(bk&&it)it.nm=bk.nm;
+  });
   var aplicados=0;
   Object.keys(porItem).forEach(function(itId){
     var it=getBM().find(function(i){return String(i.it)===String(itId)});
     if(it){it.nm=Math.round(porItem[itId]*100)/100;aplicados++}
   });
+  lss('cbsi-v15-robo-bmitens',Object.keys(porItem));
+  bmPersist();
   try{persistAll()}catch(e){}
   try{renderBM()}catch(e){}
   rlog('Robô de Ponto','Aplicar no BM',aplicados+' itens · ref '+(ref||'geral'));
@@ -6752,6 +6801,8 @@ function roboDesfazerBM(){
   if(!backup){rtoast('Nenhum backup do BM para restaurar');return}
   backup.forEach(function(b){var it=getBM().find(function(i){return i.it===b.it});if(it)it.nm=b.nm});
   localStorage.removeItem('cbsi-v15-robo-bmbackup');
+  localStorage.removeItem('cbsi-v15-robo-bmitens');
+  bmPersist();
   try{persistAll()}catch(e){}
   try{renderBM()}catch(e){}
   rlog('Robô de Ponto','Desfazer BM','restaurado backup');
@@ -6785,7 +6836,12 @@ function pintData(v){ // serial Excel ou texto → 'dd/mm'
 function pintDataFull(v){
   if(typeof v==='number'&&v>20000){var d=new Date(Math.round((v-25569)*86400000));return ('0'+d.getUTCDate()).slice(-2)+'/'+('0'+(d.getUTCMonth()+1)).slice(-2)+'/'+d.getUTCFullYear()}
   var m=String(v||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-  if(m){var y=m[3].length===2?('20'+m[3]):m[3];return ('0'+m[2]).slice(-2)+'/'+('0'+m[1]).slice(-2)+'/'+y} // texto americano m/d/y da Síntese
+  if(m){
+    var y=m[3].length===2?('20'+m[3]):m[3];
+    var a=+m[1],b=+m[2];
+    if(b>12&&a<=12)return ('0'+b).slice(-2)+'/'+('0'+a).slice(-2)+'/'+y; // já veio como d/m brasileiro
+    return ('0'+m[2]).slice(-2)+'/'+('0'+m[1]).slice(-2)+'/'+y;          // texto americano m/d/y da Síntese
+  }
   return '';
 }
 function pintStatusNorm(s){
@@ -6838,22 +6894,27 @@ function pintImportarPlanilha(wb,fonteNome){
   var hM=pintAcharHeader(rowsM,'LAUDO');
   if(hM<0)throw new Error('cabeçalho da aba Meta não encontrado');
   var rotaTerm={};L.forEach(function(l){if(l.t&&l.t!=='NA'&&l.a)rotaTerm['A:'+normTxt(l.a)]=l.t});
+  var metaSet={}; // laudos da aba Meta — a aba Meta é a autoridade sobre classificação meta
   rowsM.slice(hM+1).forEach(function(r){
     if(!r)return;var laudo=String(r[3]||'').trim();
     if(!/^\d{6,}/.test(laudo))return;
+    metaSet[laudo]=1;
     var rota=String(r[0]||'').trim();
     var exId=idx[laudo];
     var term=(exId!=null)?L[exId].t:(rotaTerm['R:'+normTxt(rota)]||rotaTerm['A:'+normTxt(String(r[1]||''))]||'NA');
     if(exId!=null&&rota)rotaTerm['R:'+normTxt(rota)]=L[exId].t;
+    var pgEx=(exId!=null&&L[exId].pg&&L[exId].pg!=='EXTRA')?L[exId].pg:'BL';
     aplica(laudo,{t:term,a:String(r[1]||'').trim(),r:String(r[2]||'').trim(),om:String(r[4]||'').trim(),
-      pg:String(r[5]||'').trim()==='BASELINE'?(L[exId]?L[exId].pg:'BL'):String(r[5]||'').trim(),pm:String(r[6]||'').trim(),
+      pg:String(r[5]||'').trim()==='BASELINE'?pgEx:String(r[5]||'').trim(),pm:String(r[6]||'').trim(),
       diBL:pintData(r[7]),dfBL:pintData(r[8]),diProg:pintData(r[10]),dfProg:pintData(r[11]),
       diTend:pintData(r[13]),dfTend:pintData(r[14]),di:pintData(r[16]),df:pintData(r[17]),
       m2l:pintNum(r[19]),m2a:pintNum(r[20]),m2p:pintNum(r[20]),m2e:pintNum(r[21]),m2pend:pintNum(r[22]),
       st:pintStatusNorm(r[23]),obs:String(r[24]||'').trim()});
+    // conserta classificação de importações anteriores: laudo da aba Meta nunca é EXTRA
+    var li=idx[laudo];
+    if(li!=null&&L[li]){if(L[li].pg==='EXTRA')L[li].pg='BL';if(L[li].pm==='EXTRA')L[li].pm=String(r[6]||'').trim()}
   });
-  // segunda passada para rotas que só ganharam terminal depois
-  // ---- aba FORA META ----
+  // ---- aba FORA META (só laudos que NÃO estão na aba Meta) ----
   var shF=wb.SheetNames.filter(function(n){return /FORA\s*META/i.test(normTxt(n))})[0];
   var m2Fora=0;
   if(shF){
@@ -6865,6 +6926,7 @@ function pintImportarPlanilha(wb,fonteNome){
       if(r[0])termFF=String(r[0]).trim();
       var laudo=String(r[3]||'').trim();
       if(!/^\d{6,}/.test(laudo))return;
+      if(metaSet[laudo])return; // já veio da aba Meta — não reclassifica como EXTRA
       var m2e=pintNum(r[16]);m2Fora+=m2e;
       aplica(laudo,{t:termFF||'NA',a:String(r[1]||'').trim(),r:String(r[2]||'').trim(),om:String(r[4]||'').trim(),
         pg:'EXTRA',pm:'EXTRA',diBL:pintData(r[7]),dfBL:pintData(r[8]),diTend:pintData(r[9]),dfTend:pintData(r[10]),
@@ -6895,8 +6957,10 @@ function pintImportarPlanilha(wb,fonteNome){
   META.m2Total=Math.round((m2Real+m2Fora)*100)/100;
   META.laudoMeta=metaL.length;
   META.laudoExec=metaL.filter(function(l){return l.st==='CONCLUÍDO'}).length;
+  META.laudoExc=L.filter(function(l){return (l.pg==='EXTRA'||l.pm==='EXTRA')&&(+l.m2e||0)>0}).length;
+  pintRecalcDerivados(corte);
   // ---- persistir + reaplicar ----
-  var snap={laudos:L.map(function(l){return l}),meta:{m2Real:META.m2Real,m2ForaMeta:META.m2ForaMeta,m2Total:META.m2Total,laudoMeta:META.laudoMeta,laudoExec:META.laudoExec},
+  var snap={laudos:L.map(function(l){return l}),meta:{m2Real:META.m2Real,m2ForaMeta:META.m2ForaMeta,m2Total:META.m2Total,laudoMeta:META.laudoMeta,laudoExec:META.laudoExec,laudoExc:META.laudoExc},
     corte:corte,fonte:fonteNome,quando:new Date().toLocaleString('pt-BR')};
   lss('cbsi-v15-pint-full',snap);
   window.__PINT_IMPORT=snap;
@@ -6906,6 +6970,50 @@ function pintImportarPlanilha(wb,fonteNome){
   rlog('Pintura','Importação completa',fonteNome+' → '+atualizados+' atualizados, '+novos+' novos'+(corte?(', corte '+corte):''));
   return{atualizados:atualizados,novos:novos,corte:corte};
 }
+// recalcula in-place as estruturas derivadas que o sistema base congela no carregamento:
+// PINT_TERM (quadro por terminal), PINT_FORA (tabela fora meta) e PINT_MES (curva mensal realizada)
+function pintRecalcDerivados(corte){
+  var L=getPintLaudos();if(!L)return;
+  try{
+    var T=null;try{T=PINT_TERM}catch(e){T=window.PINT_TERM}
+    if(T&&T.length!==undefined){
+      var ts={};
+      L.forEach(function(l){
+        var k=l.t;if(k==='MIN'||k==='MINÉRIO')k='MINÉRIO';
+        if(!ts[k])ts[k]={t:k,m2l:0,m2e:0,m2p:0,laudos:0,conc:0,exec:0,parc:0,repr:0,inic:0,cancel:0};
+        var o=ts[k];o.m2l+=(+l.m2l||0);o.m2e+=(+l.m2e||0);o.m2p+=(+l.m2pend||0);o.laudos++;
+        if(l.st==='CONCLUÍDO')o.conc++;else if(l.st==='EM EXECUÇÃO')o.exec++;else if(l.st==='PARCIAL')o.parc++;else if(l.st==='REPROGRAMAR')o.repr++;else if(l.st==='A INICIAR')o.inic++;else if(l.st==='CANCELADO')o.cancel++;
+      });
+      T.length=0;
+      Object.keys(ts).forEach(function(k){var o=ts[k];o.m2l=Math.round(o.m2l*100)/100;o.m2e=Math.round(o.m2e*100)/100;o.m2p=Math.round(o.m2p*100)/100;T.push(o)});
+    }
+  }catch(e){console.warn('PINT_TERM recalc:',e)}
+  try{
+    var F=null;try{F=PINT_FORA}catch(e){F=window.PINT_FORA}
+    if(F&&F.length!==undefined){
+      F.length=0;
+      L.filter(function(l){return l.pg==='EXTRA'||l.pm==='EXTRA'}).forEach(function(l){
+        F.push({t:l.t,a:l.a,r:l.r,l:l.l,om:l.om||'—',st:l.st,m2e:+l.m2e||0,di:l.di||'—',df:l.df||'—',obs:l.obs||'Fora do Programa'});
+      });
+    }
+  }catch(e){console.warn('PINT_FORA recalc:',e)}
+  try{
+    var M=null;try{M=PINT_MES}catch(e){M=window.PINT_MES}
+    if(M&&M.length===12){
+      var real=[0,0,0,0,0,0,0,0,0,0,0,0],laud=[0,0,0,0,0,0,0,0,0,0,0,0],exc=[0,0,0,0,0,0,0,0,0,0,0,0];
+      var mesCorte=corte?parseInt(String(corte).split('/')[1]):0;
+      L.forEach(function(l){
+        var m2=+l.m2e||0;if(m2<=0)return;
+        var mm=parseInt(String(l.df||l.di||'').split('/')[1]);
+        if(!(mm>=1&&mm<=12))mm=mesCorte; // em execução sem data-fim → mês do corte
+        if(!(mm>=1&&mm<=12))return;
+        real[mm-1]+=m2;laud[mm-1]++;
+        if(l.pg==='EXTRA'||l.pm==='EXTRA')exc[mm-1]++;
+      });
+      M.forEach(function(o,i){o.real=Math.round(real[i]*100)/100;o.laudos=laud[i];o.laudoExc=exc[i]});
+    }
+  }catch(e){console.warn('PINT_MES recalc:',e)}
+}
 // reaplica o snapshot salvo ao abrir o sistema (o original não persistia os laudos)
 function pintReaplicarSnapshot(){
   var snap=lsg('cbsi-v15-pint-full',null);
@@ -6914,6 +7022,7 @@ function pintReaplicarSnapshot(){
   L.length=0;snap.laudos.forEach(function(l){L.push(l)});
   var META=getPintMeta();if(META&&snap.meta)Object.assign(META,snap.meta);
   window.__PINT_IMPORT=snap;
+  pintRecalcDerivados(snap.corte);
   return true;
 }
 // corrige os rótulos fixos "rev04 / Data Corte 25/03/2026" na tela
@@ -6927,7 +7036,7 @@ function fixPintFonte(){
       var t=el.textContent||'';
       var novo=t;
       if(t.indexOf('Painel_de_Pintura_2026_rev04.xlsx')>=0)novo=novo.replace('Painel_de_Pintura_2026_rev04.xlsx',snap.fonte||'Painel de Pintura (Drive)');
-      if(snap.corte&&/Data Corte:\s*\d{2}\/\d{2}\/\d{4}/.test(t))novo=novo.replace(/Data Corte:\s*\d{2}\/\d{2}\/\d{4}/,'Data Corte: '+snap.corte);
+      if(snap.corte&&/(Data )?Corte:\s*\d{2}\/\d{2}\/\d{4}/.test(t))novo=novo.replace(/(Data )?Corte:\s*\d{2}\/\d{2}\/\d{4}/,function(mm,p1){return (p1||'')+'Corte: '+snap.corte});
       if(novo!==t)el.textContent=novo;
     }
   });
@@ -7006,12 +7115,15 @@ function drivePontoAuto(files){
   var st=document.getElementById('roboStatus');
   var seq=Promise.resolve(),novos=0;
   pdfs.forEach(function(f){
-    if(ROBO_ARQS.some(function(a){return a.nome===f.name}))return;
+    // dedup por ID do arquivo no Drive (nomes iguais em pastas/meses diferentes não se bloqueiam)
+    if(ROBO_ARQS.some(function(a){return a.fid===f.id||(!a.fid&&a.nome===f.name)}))return;
     novos++;
     seq=seq.then(function(){
       if(st)st.textContent='⬇️ Drive: baixando '+f.name+'…';
       return driveDownload(f.id).then(function(buf){
-        return roboProcessarPdf(new File([buf],f.name,{type:'application/pdf'}),st);
+        var file=new File([buf],f.name,{type:'application/pdf'});
+        try{file._fid=f.id}catch(e){}
+        return roboProcessarPdf(file,st);
       }).catch(function(e){console.warn('Drive ponto:',f.name,e)});
     });
   });
@@ -7053,6 +7165,7 @@ function driveBmsAuto(files){
       if(item){item.nm=Math.round(porItem[it]*10000)/10000;atualizados++}
     });
     DRIVE_CFG.status.bmsImport={marca:marca,arquivo:f.name,quando:new Date().toLocaleString('pt-BR'),itens:atualizados};driveSave();
+    bmPersist();
     try{persistAll()}catch(e){}
     try{renderBM()}catch(e){}
     rlog('Drive BMS','Importar BM consolidado',f.name+' -> '+atualizados+' itens');
@@ -7063,7 +7176,7 @@ function driveBmsAuto(files){
 function drivePintAuto(files){
   var f=acharUltimoXlsx(files);
   if(!f)return;
-  var marca=f.id+'|'+f.modifiedTime+'|v2';
+  var marca=f.id+'|'+f.modifiedTime+'|v3';
   if(DRIVE_CFG.status.pintImport&&DRIVE_CFG.status.pintImport.marca===marca)return;
   ensureXLSX().then(function(){return driveDownload(f.id)}).then(function(buf){
     var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
@@ -7197,6 +7310,7 @@ function renderRobo(){
        +'<input type="number" min="1" max="12" step="0.5" value="'+ROBO_PARAMS.manualJornSegQui+'" onchange="roboSetParam(\'manualJornSegQui\',this.value)" style="width:40px;font-size:9px;padding:2px">h · sex '
        +'<input type="number" min="1" max="12" step="0.5" value="'+ROBO_PARAMS.manualJornSex+'" onchange="roboSetParam(\'manualJornSex\',this.value)" style="width:40px;font-size:9px;padding:2px">h'
        +' · excedente dia útil → '+selHE('manualHeUtil')+' · sábado → '+selHE('manualHeSab')+' · domingo/feriado → '+selHE('manualHeDom')
+       +' · feriados: <input type="text" value="'+(ROBO_PARAMS.feriados||[]).join(', ')+'" onchange="roboSetFeriados(this.value)" title="datas dd/mm/aaaa separadas por vírgula" style="width:190px;font-size:8px;padding:2px">'
        +(nMan?(' · <b style="color:var(--cs)">'+nMan+' lançamento(s) manuais no período ('+Object.keys(arqsMan).length+' arquivo(s))</b>'):' · nenhum lançamento manual no período selecionado')
        +'</div>';
      return html;
@@ -7357,10 +7471,13 @@ try{
 
 // propaga a referência de dias ao CFG global (Motor/Planejamento/Índices)
 try{if(typeof CFG!=='undefined'&&CFG){CFG.diasUteis=PROD_PARAMS.diasRef}}catch(e){}
+// reaplica o BM salvo (o persistAll do base não guarda o BM)
+try{if(bmReaplicar()){console.log('💰 BM: quantidades salvas reaplicadas')}}catch(e){}
 // reaplica a última importação do Painel de Pintura (o sistema original não persistia os laudos)
 try{
   if(pintReaplicarSnapshot()){
     try{buildPintura()}catch(e){}
+    try{R()}catch(e){}   // Dashboard/One Page/Planejamento renderizam com os dados atuais
     console.log('🎨 Painel de Pintura: snapshot importado reaplicado');
   }
   // rótulos de fonte/data de corte corrigidos após cada render
