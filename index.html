@@ -6298,8 +6298,22 @@ function calcDiaCliente(marcas,dow,dataStr){
     else if(dN==='SAB'){r.he100=H}
     else{
       var j=(dN==='SEX')?8:9;
-      r.hn=Math.min(H,j);
-      r.he50=(H>j+0.25)?(H-j):0;      // tolerância de 15 min
+      if(a<12){
+        // REGRA DAS PREMISSAS (turno diurno, ancorada no horário programado 07h → 17h / sex 16h):
+        // · HE = somente o tempo APÓS o fim programado da jornada (premissas 1 e 3)
+        // · minutos de entrada antecipada NUNCA viram extra — apenas completam a HN (premissas 3 e 5)
+        // · atraso na entrada deduz da HN, não da HE (premissa 1: 07h01→18h02 = HN 08h59 + HE 01h02)
+        // · tolerância de 15 min sobre a extra (premissas 2 e 5: até 15 min não contabiliza)
+        var fimProg=7+j+1;                      // 17h (seg–qui) · 16h (sex)
+        var heFim=Math.max(0,b-fimProg);
+        if(heFim<=0.25)heFim=0;                 // tolerância de 15 min
+        r.he50=heFim;
+        r.hn=Math.min(j,Math.max(0,H-heFim));
+      }else{
+        // turno vespertino/noturno (sem âncora nas premissas): jornada cheia + excedente
+        r.hn=Math.min(H,j);
+        r.he50=(H>j+0.25)?(H-j):0;
+      }
       // fator de reconhecimento da HE 50% (De Acordo do cliente) — 100% = integral apurada
       var fat=(+P.he50Fator||100)/100;
       if(fat<1)r.he50=r.he50*fat;
