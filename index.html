@@ -236,7 +236,7 @@ const EF=[
 // ===== BM ITEMS =====
 
 // ===== RESTAURADO V21 — DADOS DE SUPORTE =====
-const TODAY_STR='2026-03-27';
+const TODAY_STR=(function(){var t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')})();
 const EF_STATUS={ativo:'ATIVO',afastado:'AFASTADO',atestado:'ATESTADO',ferias:'FÉRIAS',desligado:'DESLIGADO',absenteismo:'ABSENTEÍSMO'};
 const EF_TURNOS={dia:'Dia (07-17h)',noite:'Noite (19-05h)',fds:'Fim de Semana',folga:'Folga'};
 
@@ -780,9 +780,9 @@ const totalBM=BM.reduce((s,i)=>s+i.nm*i.pu,0);
 
 // Programming stats from PARADAS
 const tacAll=PARADAS.filter(p=>p.e==='TAC');
-const tacDone=tacAll.filter(p=>new Date(p.f)<new Date('2026-03-26'));
-const tacActive=tacAll.filter(p=>new Date(p.i)<=new Date('2026-03-26')&&new Date(p.f)>=new Date('2026-03-26'));
-const tacPlanned=tacAll.filter(p=>new Date(p.i)>new Date('2026-03-26'));
+const tacDone=tacAll.filter(p=>new Date(p.f)<(new Date(new Date().toDateString())));
+const tacActive=tacAll.filter(p=>new Date(p.i)<=(new Date(new Date().toDateString()))&&new Date(p.f)>=(new Date(new Date().toDateString())));
+const tacPlanned=tacAll.filter(p=>new Date(p.i)>(new Date(new Date().toDateString())));
 const tacPctDone=tacAll.length>0?Math.round(tacDone.length/tacAll.length*100):0;
 
 document.getElementById('p-dash').innerHTML=`
@@ -1560,7 +1560,7 @@ const prodPIN_m2_mes=capPIN_HH*CFG.prodPIN;
 const prodALP_m2_mes=capALP_HH*CFG.prodALP;
 
 const tacAll=PARADAS.filter(p=>p.e==='TAC');
-const today=new Date('2026-03-26');
+const today=(new Date(new Date().toDateString()));
 
 // Análise mensal COM DISCIPLINAS SEPARADAS
 const meses=[];
@@ -1904,7 +1904,7 @@ if(show)show.style.display='block';
 function renderGanttMO(){
 const el=document.getElementById('ganttMOArea');if(!el)return;
 const tacAll=PARADAS.filter(p=>p.e==='TAC');
-const today=new Date('2026-03-26');
+const today=(new Date(new Date().toDateString()));
 const minD=new Date('2026-01-01'),maxD=new Date('2026-12-31');
 const totalDays=365;const dayW=Math.max(2.5,900/totalDays);
 const mDays=[31,28,31,30,31,30,31,31,30,31,30,31];
@@ -2012,8 +2012,8 @@ const imps=getImp();const totalH=imps.reduce((s,i)=>s+i.h,0);
 const impVale=imps.filter(i=>i.src==='VALE').reduce((s,i)=>s+i.h,0);
 const impCbsi=imps.filter(i=>i.src==='CBSI').reduce((s,i)=>s+i.h,0);
 const tacMes=PARADAS.filter(pp=>pp.e==='TAC'&&pp.m===lm);
-const tacDoneMes=tacMes.filter(pp=>new Date(pp.f)<new Date('2026-03-26'));
-const tacNextAll=PARADAS.filter(pp=>pp.e==='TAC'&&new Date(pp.i)>new Date('2026-03-26')).slice(0,4);
+const tacDoneMes=tacMes.filter(pp=>new Date(pp.f)<(new Date(new Date().toDateString())));
+const tacNextAll=PARADAS.filter(pp=>pp.e==='TAC'&&new Date(pp.i)>(new Date(new Date().toDateString()))).slice(0,4);
 const mesAnt=lm>1?D.meses[Y+'-'+(lm-1)]:null;
 const trendL=mesAnt&&mesAnt.lp>0?(mo.lr/mo.lp*100)-(mesAnt.lr/mesAnt.lp*100):0;
 const trendA=mesAnt&&mesAnt.ap>0?(mo.ar/mo.ap*100)-(mesAnt.ar/mesAnt.ap*100):0;
@@ -2073,7 +2073,7 @@ p.innerHTML=`<div class="cd" style="background:#fff;color:#333;max-width:960px;m
 <div>
 <div style="font-size:10px;font-weight:800;color:var(--cb);margin-bottom:4px;border-bottom:2px solid var(--cs);padding-bottom:2px">PARADAS TAC NO PERÍODO</div>
 <div style="font-size:9px;color:#555">${tacMes.length} parada(s) · ${tacDoneMes.length} concluída(s)</div>
-${tacMes.slice(0,5).map(pp=>`<div style="display:flex;align-items:center;gap:4px;padding:2px 0;font-size:8px;border-bottom:1px solid #f0f0f0"><span style="font-weight:700;color:var(--cb);width:45px">${pp.r}</span><span style="flex:1;color:#666">${pp.a.substring(0,30)}</span><span style="color:${new Date(pp.f)<new Date('2026-03-26')?'#00a070':'var(--co)'}">●</span></div>`).join('')}
+${tacMes.slice(0,5).map(pp=>`<div style="display:flex;align-items:center;gap:4px;padding:2px 0;font-size:8px;border-bottom:1px solid #f0f0f0"><span style="font-weight:700;color:var(--cb);width:45px">${pp.r}</span><span style="flex:1;color:#666">${pp.a.substring(0,30)}</span><span style="color:${new Date(pp.f)<(new Date(new Date().toDateString()))?'#00a070':'var(--co)'}">●</span></div>`).join('')}
 <div style="font-size:8px;font-weight:700;color:var(--cb);margin-top:6px">PRÓXIMAS:</div>
 ${tacNextAll.map(pp=>`<div style="font-size:8px;color:#888;padding:1px 0">${pp.r} — ${pp.i.split('-').reverse().join('/')} (${pp.d}h)</div>`).join('')}
 </div>
@@ -2406,7 +2406,7 @@ const totalH=tacSel.reduce((s,p)=>s+p.d,0);
 const byMes={};tacP.forEach(p=>{byMes[p.m]=(byMes[p.m]||0)+1});
 const byRota={};tacSel.forEach(p=>{byRota[p.r]=(byRota[p.r]||0)+1});
 const rotaSorted=Object.entries(byRota).sort((a,b)=>b[1]-a[1]);
-const today=new Date('2026-03-26');
+const today=(new Date(new Date().toDateString()));
 
 document.getElementById('p-mapa').innerHTML=`
 <div class="g g5" style="margin-bottom:6px">
@@ -2488,7 +2488,7 @@ renderLayoutMap(todosSel);
 function renderGantt(paradas){
 const el=document.getElementById('ganttArea');if(!el)return;
 if(!paradas.length){el.innerHTML='<div style="color:var(--dm);text-align:center;padding:10px">Sem paradas no período</div>';return}
-const today=new Date('2026-03-26');
+const today=(new Date(new Date().toDateString()));
 // Dynamic range based on filtered data
 const allDates=paradas.flatMap(p=>[new Date(p.i),new Date(p.f)]);
 let minD=new Date(Math.min(...allDates));
@@ -2566,7 +2566,7 @@ el.innerHTML=html;
 
 function renderLayoutMap(paradas){
 const el=document.getElementById('layoutMap');if(!el)return;
-const today=new Date('2026-03-26');
+const today=(new Date(new Date().toDateString()));
 const getS=p=>{const i=new Date(p.i),f=new Date(p.f);return f<today?'done':i<=today?'active':'planned'};
 const sCol={done:'#00C48C',active:'#FFAD00',planned:'#00ADF9'};
 const ri={};
@@ -2825,7 +2825,7 @@ if(idx>=0){PARADAS.splice(idx,1);persistAll();logAudit('Mapa','Excluir','Parada 
 function exportParadas(){
 const tacP=PARADAS.filter(p=>p.e==='TAC');
 let csv='Rota;Ativos;Inicio;Fim;Duracao;Gerencia;Status\n';
-const today=new Date('2026-03-26');
+const today=(new Date(new Date().toDateString()));
 tacP.forEach(p=>{
   const fim=new Date(p.f);const ini=new Date(p.i);
   const st=fim<today?'Concluída':ini<=today?'Em Curso':'Programada';
@@ -3079,7 +3079,7 @@ return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><di
 
 <!-- ====== ALERTA SAP 7 DIAS ====== -->
 ${(function(){
-var hoje=new Date('2026-03-25');
+var hoje=(new Date(new Date().toDateString()));
 var alertas=PL.filter(function(l){
 if(l.df==='—'||!l.df||l.sapDt)return false;
 if(l.st!=='CONCLUÍDO'&&l.st!=='PARCIAL')return false;
@@ -4367,7 +4367,7 @@ const cats=[
 {q:'Local',a:'Terminais Portuários de Tubarão — <b>Porto Tubarão, Vitória/ES</b>'},
 {q:'Contratos e OS',a:'Original: <b>5500113198</b> | 1º TAC: <b>5900117444</b> (OS 0057330.00/2024) | CC: <b>CB8034800</b>'}]}
 ];
-const d1=new Date('2024-07-05'),d2=new Date('2027-08-03'),dh=new Date('2026-03-26');
+const d1=new Date('2024-07-05'),d2=new Date('2027-08-03'),dh=(new Date(new Date().toDateString()));
 const dt=Math.ceil((d2-d1)/864e5),dd=Math.ceil((dh-d1)/864e5),dr=dt-dd,pp=Math.round(dd/dt*100);
 const t1=new Date('2026-02-26'),t2=new Date('2026-09-14');
 const tt=Math.ceil((t2-t1)/864e5),td=Math.ceil((dh-t1)/864e5),tr=tt-td,tp=Math.round(td/tt*100);
@@ -4407,7 +4407,7 @@ function fltFaq(){const q=(document.getElementById('faqS')?.value||'').toLowerCa
 // V44 renderExec removed — replaced by V21 buildExec+renderExec (complete with Kanban/Lista/Campo)
 
 // Exec map data (restored from V44)
-const today2=new Date('2026-03-26');
+const today2=(new Date(new Date().toDateString()));
 const tacAll2=PARADAS.filter(p=>p.e==='TAC');
 const getS2=p=>{const i2=new Date(p.i),f2=new Date(p.f);return f2<today2?'done':i2<=today2?'active':'planned'};
 const sCol2={done:'#00C48C',active:'#FFAD00',planned:'#00ADF9'};
@@ -4587,7 +4587,7 @@ document.getElementById('p-vt').innerHTML=`
 <div class="kp"><div class="kl">Adequado</div><div class="kv" style="color:var(--gn)">${vtAdequado}</div></div>
 <div class="kp"><div class="kl">Subdimensionado</div><div class="kv" style="color:var(--rd)">${vtSub}</div></div>
 <div class="kp"><div class="kl">Superdimensionado</div><div class="kv" style="color:var(--ca)">${vtSup}</div></div>
-<div class="kp"><div class="kl">Próx. Paradas (7d)</div><div class="kv" style="color:var(--co)">${PARADAS.filter(p=>p.e==='TAC'&&Math.ceil((new Date(p.i)-new Date('2026-03-26'))/864e5)<=7&&Math.ceil((new Date(p.i)-new Date('2026-03-26'))/864e5)>0).length}</div></div>
+<div class="kp"><div class="kl">Próx. Paradas (7d)</div><div class="kv" style="color:var(--co)">${PARADAS.filter(p=>p.e==='TAC'&&Math.ceil((new Date(p.i)-(new Date(new Date().toDateString())))/864e5)<=7&&Math.ceil((new Date(p.i)-(new Date(new Date().toDateString())))/864e5)>0).length}</div></div>
 </div>
 
 <div class="g g2" style="margin-bottom:6px">
@@ -4598,7 +4598,7 @@ document.getElementById('p-vt').innerHTML=`
 <div class="g g4" style="gap:4px;margin-bottom:4px">
 <div class="fg"><label class="fl">Parada/Rota *</label><select id="vtRota" style="font-size:9px;padding:3px;border-radius:4px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:100%">
 <option value="">Selecione...</option>
-${PARADAS.filter(p=>p.e==='TAC'&&new Date(p.i)>new Date('2026-03-20')).sort((a,b)=>new Date(a.i)-new Date(b.i)).slice(0,25).map(p=>`<option value="${p.r}">${p.r} — ${p.a.substring(0,25)} (${p.i.split('-').reverse().join('/')})</option>`).join('')}
+${PARADAS.filter(p=>p.e==='TAC'&&new Date(p.i)>(new Date(new Date().toDateString()))).sort((a,b)=>new Date(a.i)-new Date(b.i)).slice(0,25).map(p=>`<option value="${p.r}">${p.r} — ${p.a.substring(0,25)} (${p.i.split('-').reverse().join('/')})</option>`).join('')}
 </select></div>
 <div class="fg"><label class="fl">Disciplina *</label><select id="vtDisc" style="font-size:9px;padding:3px;border-radius:4px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:100%"><option value="PIN">PIN — Pintura</option><option value="AND">AND — Andaime</option><option value="ALP">ALP — Alpinismo</option><option value="MEC">MEC — Mecânica</option></select></div>
 <div class="fg"><label class="fl">Responsável *</label><select id="vtResp" style="font-size:9px;padding:3px;border-radius:4px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:100%">
@@ -4969,7 +4969,7 @@ const abaixoMin=ALM_ESTOQUE.filter(m=>m.qtd<m.min).length;
 const valorEstoque=ALM_ESTOQUE.reduce((s,m)=>s+m.qtd*m.custo,0);
 
 // Previsão de demanda baseada nas próximas paradas
-const proxParadas=PARADAS.filter(p=>p.e==='TAC'&&new Date(p.i)>new Date('2026-03-26')).slice(0,10);
+const proxParadas=PARADAS.filter(p=>p.e==='TAC'&&new Date(p.i)>(new Date(new Date().toDateString()))).slice(0,10);
 const areaPrev=proxParadas.length*400;
 
 document.getElementById('p-alm').innerHTML=`
