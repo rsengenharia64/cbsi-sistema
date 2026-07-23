@@ -5853,7 +5853,9 @@ var ROBO_PARAMS_DEFAULT={
   // regras de período (editáveis na tela — mudou o contrato, muda aqui, nada quebra)
   medIni:21, medFim:20,          // período de apuração da medição: dia 21 -> dia 20
   compOffset:0,                  // competência = mês do TÉRMINO da apuração (21/06–20/07 = JUL; a NF sai no mês seguinte)
-  paramsV:2,                     // versão das regras (migração automática)
+  calcRegra:'cliente',           // 'cliente' = regra de cobrança validada (planilha PONTO AJUSTADO) · 'rh' = coluna Conta/Valor do espelho
+  he50Fator:100,                 // % da HE 50% apurada reconhecida na cobrança (os "De Acordo" do cliente cortam parte)
+  paramsV:3,                     // versão das regras (migração automática)
   pontoIni:16, pontoFim:15,      // período do espelho de ponto (informativo)
   jornadaPadraoDia:9,             // horas de trabalho num dia cheio (07-17 com 1h almoço)
   adnIni:22, adnFim:5,            // janela do adicional noturno (usado só no cálculo próprio)
@@ -5876,6 +5878,8 @@ Object.keys(ROBO_PARAMS_DEFAULT).forEach(function(k){if(ROBO_PARAMS[k]==null)ROB
 // v2: correção do conceito de competência — competência = mês do TÉRMINO da apuração
 // (21/06–20/07 = competência JUL, faturada em AGO). Antes rotulava como AGO.
 if((+ROBO_PARAMS.paramsV||1)<2){ROBO_PARAMS.compOffset=0;ROBO_PARAMS.paramsV=2;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
+// v3: regra de cálculo de horas passa a seguir a planilha de cobrança validada pelo cliente (PONTO AJUSTADO)
+if((+ROBO_PARAMS.paramsV||1)<3){ROBO_PARAMS.calcRegra='cliente';ROBO_PARAMS.paramsV=3;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -6224,8 +6228,9 @@ function processarManual(lines,file,st){
     var funcQ=ROBO_DEPARA[normTxt(cargo)]||ROBO_DEPARA[cargo]||'';
     var ref=b.fim?(['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'][+b.fim.slice(3,5)-1]+'/'+b.fim.slice(6)):'';
     b.dias.forEach(function(dia){
-      var c=calcManualDia(dia);
       var d2=('0'+dia.dt.getDate()).slice(-2)+'/'+('0'+(dia.dt.getMonth()+1)).slice(-2)+'/'+String(dia.dt.getFullYear()).slice(-2);
+      var c=(ROBO_PARAMS.calcRegra==='cliente')?calcDiaCliente(dia.horas,DOW_PT[dia.dt.getDay()],d2):calcManualDia(dia);
+      if(dia.marcador)c.obs=(c.obs||[]).concat([dia.marcador]);
       var nomeN=normTxt(ef?ef.nome:b.nome);
       // dedup dentro do próprio arquivo (cartão repetido/página re-escaneada): 1ª ocorrência vale
       var chave=nomeN+'|'+d2;
@@ -6248,7 +6253,7 @@ function processarManual(lines,file,st){
       ROBO_LANC.push({ref:ref,per:(b.ini||'')+' a '+(b.fim||''),data:d2,dow:DOW_PT[dia.dt.getDay()],phtd:'MAN',
         id:ef?ef.id:'',mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,
         hn:c.hn,he50:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,
-        obs:('PONTO MANUAL'+(c.obs.length?' · '+c.obs.join('; '):'')),arq:file.name});
+        obs:('PONTO MANUAL'+(c.obs.length?' · '+c.obs.join('; '):'')),arq:file.name,mk:dia.horas.join('|')});
       totalDias++;
     });
   });
@@ -6259,6 +6264,82 @@ function processarManual(lines,file,st){
   if(st)st.textContent='🖋 '+file.name+': '+blocos.length+' cartões manuais processados'+(semCad.length?(' · ⚠️ sem cadastro: '+semCad.join(', ')):'')+(conflitos?(' · '+conflitos+' dia(s) já tinham horas no RH (mantido o RH)'):'');
   return{colabs:blocos.length,semCad:semCad};
 }
+
+// ---------------------------------------------------------------------------
+// REGRA DE CÁLCULO DO CLIENTE — réplica exata da planilha "PONTO AJUSTADO"
+// (PONTO JULHO 21.06 a 20.07), validada para cobrança:
+//  · H. trabalhada = ÚLTIMA saída − PRIMEIRA entrada − 1h de almoço (fixo)
+//  · Dia útil: HN até 9h (sexta 8h); HE 50% só se exceder 15 min de tolerância,
+//    e aí conta a partir da jornada (H − 9h / H − 8h)
+//  · Sábado: TODAS as horas → HE 100% · Domingo/Feriado: TODAS → HE 150%
+//  · Sáb/dom/feriado: contagem inicia às 06h45 (premissa 7)
+//  · Adicional noturno 20%: horas antes de 06h (sexta 05h) e após 22h
+// ---------------------------------------------------------------------------
+function calcDiaCliente(marcas,dow,dataStr){
+  var P=ROBO_PARAMS,r={hn:0,he50:0,he100:0,he150:0,adn:0,trab:0,obs:[]};
+  var ms=(marcas||[]).map(hm2h);
+  if(ms.length<2)return r;
+  var a=ms[0],b=ms[ms.length-1];if(b<=a)b+=24;
+  function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
+  var dN=normTxt(dow);
+  var dFull=(function(s){var p=String(s||'').split('/');if(p.length<3)return '';var y=+p[2];if(y<100)y+=2000;return p[0]+'/'+p[1]+'/'+y})(dataStr);
+  var fer=(P.feriados||[]).indexOf(dFull)>=0;
+  var fds=fer||dN==='SAB'||dN==='DOM';
+  if(fds&&a<6.75)a=6.75;              // premissa 7: sáb/dom/fer contam a partir de 06h45
+  var bruto=b-a;
+  // 1h de almoço: desconta quando a jornada passa de 6h OU quando atravessa a janela do almoço (12h00–12h30+)
+  var H=(bruto>6||(a<12.25&&b>=12.5))?(bruto-1):bruto;
+  if(H<0)H=0;
+  r.trab=H;
+  var limiar=(dN==='SEX')?5:6;        // premissa 6: HNOT até 06h (sexta 05h)
+  r.adn=ov(a,b,0,limiar)+ov(a,b,22,24)+ov(a,b,24,24+limiar);
+  if(H>0){
+    if(fer||dN==='DOM'){r.he150=H;if(fer)r.obs.push('Feriado')}
+    else if(dN==='SAB'){r.he100=H}
+    else{
+      var j=(dN==='SEX')?8:9;
+      r.hn=Math.min(H,j);
+      r.he50=(H>j+0.25)?(H-j):0;      // tolerância de 15 min
+      // fator de reconhecimento da HE 50% (De Acordo do cliente) — 100% = integral apurada
+      var fat=(+P.he50Fator||100)/100;
+      if(fat<1)r.he50=r.he50*fat;
+    }
+  }
+  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*100)/100});
+  return r;
+}
+// recalcula TODOS os lançamentos com a regra atual (as marcações ficam guardadas em l.mk)
+window.roboRecalcular=function(silencioso){
+  var n=0,semMk=0;
+  ROBO_LANC.forEach(function(l){
+    if(l.phtd==='MAN'){ // ponto manual: reclassifica excedente com a tolerância vigente
+      if(!l.mk)return;
+      var c=calcDiaCliente(l.mk.split('|').filter(Boolean),l.dow,l.data);
+      l.hn=c.hn;l.he50=c.he50;l.he100=c.he100;l.he150=c.he150;l.adn=c.adn;l.trab=c.trab;n++;return;
+    }
+    if(!l.mk){semMk++;return}
+    var marcas=l.mk.split('|').filter(Boolean);
+    if(ROBO_PARAMS.calcRegra==='cliente'){
+      var c2=calcDiaCliente(marcas,l.dow,l.data);
+      l.hn=c2.hn;l.he50=c2.he50;l.he100=c2.he100;l.he150=c2.he150;l.adn=c2.adn;l.trab=c2.trab;
+    }else{
+      var dia={marcas:marcas,contas:(l.ct?l.ct.split(';').filter(Boolean).map(function(s){var p=s.split('~');return{t:p[0],v:p[1]}}):[])};
+      var c3=calcDia(dia);
+      l.hn=c3.hn;l.he50=c3.he50;l.he100=c3.he100;l.he150=c3.he150;l.adn=c3.adn;l.trab=c3.trab;
+    }
+    n++;
+  });
+  roboSave();
+  if(!silencioso){
+    rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
+    renderRobo();
+  }
+  return{recalculados:n,semMarcacoes:semMk};
+};
+window.roboSetRegra=function(v){
+  ROBO_PARAMS.calcRegra=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
+  window.roboRecalcular();
+};
 
 // processa PDFs do espelho → lançamentos
 function roboProcessarPdf(file,statusEl){
@@ -6292,7 +6373,7 @@ function roboProcessarPdf(file,statusEl){
       // — preservando os lançamentos do PONTO MANUAL (phtd 'MAN'), que têm fonte própria
       ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.id===b.id&&l.ref===b.ref&&l.phtd!=='MAN')});
       b.dias.forEach(function(d){
-        var c=calcDia(d);
+        var c=(ROBO_PARAMS.calcRegra==='cliente')?calcDiaCliente(d.marcas,d.dow,d.data):calcDia(d);
         // convivência com o PONTO MANUAL no mesmo dia: RH zerado → o manual assume (não insere);
         // RH com horas → o RH é oficial (remove a linha manual do dia)
         var nomeN=normTxt(ef?ef.nome:b.nome);
@@ -6301,7 +6382,8 @@ function roboProcessarPdf(file,statusEl){
           if(c.trab<=0&&c.he150<=0)return;
           ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.phtd==='MAN'&&l.data===d.data&&(l.id===b.id||normTxt(l.nome)===nomeN))});
         }
-        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; '),arq:file.name});
+        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; '),arq:file.name,
+          mk:d.marcas.join('|'),ct:d.contas.map(function(x){return x.t+'~'+x.v}).join(';')});
       });
       novos++;
     });
@@ -7482,6 +7564,9 @@ function renderRobo(){
        +' · Competência = <select onchange="roboSetParam(\'compOffset\',this.value)" style="font-size:8px"><option value="0" '+(+ROBO_PARAMS.compOffset===0?'selected':'')+'>mês do término (NF no mês seguinte)</option><option value="1" '+(+ROBO_PARAMS.compOffset===1?'selected':'')+'>mês seguinte ao término</option></select>'
        +' · <span title="Ex.: medição fechada em 20/07 → competência JUL (apuração 21/06 a 20/07) → NF emitida em AGO. No filtro global, uma sequência de meses vale UMA competência, a do último mês: JUN+JUL = JUL · JUL+AGO = AGO · AGO+SET = SET. Nunca soma medições.">ℹ️ regra</span>'
        +' · Espelho de ponto: '+ROBO_PARAMS.pontoIni+'→'+ROBO_PARAMS.pontoFim+' (a apuração é por DATA do lançamento, então funciona mesmo cruzando dois espelhos)'
+       +' · Cálculo de horas: <select onchange="roboSetRegra(this.value)" style="font-size:8px"><option value="cliente" '+(ROBO_PARAMS.calcRegra==='cliente'?'selected':'')+'>Regra CLIENTE (Ponto Ajustado — cobrança)</option><option value="rh" '+(ROBO_PARAMS.calcRegra==='rh'?'selected':'')+'>Conta oficial RH (espelho)</option></select>'
+       +' · HE50 reconhecida: <input type="number" min="0" max="100" value="'+(+ROBO_PARAMS.he50Fator||100)+'" onchange="roboSetParam(\'he50Fator\',this.value);roboRecalcular()" style="width:44px;font-size:9px;padding:2px" title="% da HE 50% apurada que o cliente reconhece na cobrança (De Acordo HE). 100 = integral.">%'
+       +' <span title="Regra CLIENTE (planilha validada): H = última saída − primeira entrada − 1h almoço (só quando a jornada passa de 6h ou cruza o almoço) · HN até 9h (sex 8h) · HE 50% só acima de 15 min de tolerância, contando a partir da jornada · sábado inteiro = HE 100% · domingo/feriado inteiro = HE 150% · fins de semana contam a partir de 06h45 · ADN até 06h (sex 05h) · HE50 sujeita aos De Acordo (campo %). Trocar a regra recalcula todos os lançamentos na hora.">ℹ️</span>'
        +'</div>';
      var selHE=function(k){var v=ROBO_PARAMS[k];return '<select onchange="roboSetParamStr(\''+k+'\',this.value)" style="font-size:8px">'+['he50','he100','he150'].map(function(o){return '<option value="'+o+'" '+(v===o?'selected':'')+'>'+o.replace('he','HE ')+'%</option>'}).join('')+'</select>'};
      var nMan=0,arqsMan={};con.regs.forEach(function(l){if((l.obs||'').indexOf('PONTO MANUAL')===0){nMan++;arqsMan[l.arq]=1}});
@@ -7675,7 +7760,7 @@ try{renderRobo()}catch(e){console.warn('Robo init:',e)}
 try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
 try{renderAndaimes()}catch(e){console.warn('Andaimes init:',e)}
 // gancho de diagnóstico (usado nos testes automatizados)
-window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,ensurePdfJs:ensurePdfJs};
+window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,calcDiaCliente:calcDiaCliente,ensurePdfJs:ensurePdfJs};
 console.log('🤖 Robô de Ponto + Andaimes carregados (add-on v16)');
 })();
 
