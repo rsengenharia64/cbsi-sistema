@@ -1446,9 +1446,9 @@ ${dataSources.map((s,i)=>`<tr style="background:${i%2?'rgba(0,0,0,.01)':'transpa
 function renderBM(){
 // BM data by month - MED1=Jan(21/12-20/01), MED1A=Fev(21/01-20/02)
 const selM=[...SM].sort((a,b)=>a-b);
-const isMed1=selM.includes(1);const isMed1A=selM.includes(2);
-const medLabel=isMed1&&isMed1A?'MED 1 + 1A':isMed1?'MED 1':isMed1A?'MED 1A':'—';
-const medNum=isMed1&&isMed1A?'1+1A':isMed1?'1':isMed1A?'1A':'—';
+const isMed1=selM.includes(1);const isMed1A=selM.includes(2);const __bc=(typeof window.__bmComp==='function')?window.__bmComp():null;
+const medLabel=__bc?__bc.label:(selM.length?'MÊS':'—');
+const medNum=__bc?__bc.num:'—';
 
 // Quantidades por medição (MED1=acumulado anterior, MED1A=no mês)
 // MED1 quantities are stored as "acumAnt" for each item
@@ -1467,19 +1467,19 @@ const rows=BM.map(i=>{
   // If Fev selected, show med1A quantities
   // If both, show combined
   
-  const qNoMes=isMed1A?qMed1A:0;
+  const qNoMes=selM.length?qMed1A:0;
   const vNoMes=qNoMes*i.pu;
   totalMesDisplay+=vNoMes;
   
   return{...i,qNoMes,vNoMes};
 });
 
-const acumAnt=isMed1A?1608423.72:0;
+const acumAnt=selM.length?((+localStorage.getItem('cbsi-v15-bm-acumant'))||1608423.72):0;
 const totalAcum=acumAnt+totalMesDisplay;
 const saldoContrato=totalContrato-totalAcum;
 const execPct=(totalAcum/totalContrato*100).toFixed(1);
 
-const periodo=isMed1&&isMed1A?'21/12/2025 a 20/02/2026':isMed1?'21/12/2025 a 20/01/2026':isMed1A?'21/01 a 20/02/2026':'Selecione mês';
+const periodo=__bc?__bc.periodo:(selM.length?'—':'Selecione mês');
 
 const hhVal=rows.filter(i=>i.t==='HH').reduce((s,i)=>s+i.vNoMes,0);
 const vbVal=rows.filter(i=>i.t==='VB').reduce((s,i)=>s+i.vNoMes,0);
@@ -1510,13 +1510,13 @@ document.getElementById('p-bm').innerHTML=`
 <div><div style="font-size:12px;font-weight:800;color:var(--cb)">BOLETIM DE MEDIÇÃO</div><div style="font-size:9px;color:var(--dm)">Contrato 590011744405 · OS.0057330.00/2024 · CBSI → VALE Porto Tubarão/ES</div></div>
 <div style="display:flex;gap:4px"><button class="btn bo bsm" onclick="printBM()">🖨️ Imprimir BM</button></div>
 </div>
-<div style="display:flex;gap:8px;font-size:8px;margin-bottom:4px;align-items:center;flex-wrap:wrap"><span>Medição: <b>${medNum}</b></span><span>Período: <b>${periodo}</b></span><span>Data: <b>19/03/2026</b></span><span>Folhas: <b>1 de 10</b></span>
+<div style="display:flex;gap:8px;font-size:8px;margin-bottom:4px;align-items:center;flex-wrap:wrap"><span>Medição: <b>${medNum}</b></span><span>Período: <b>${periodo}</b></span><span>Data: <b>${new Date().toLocaleDateString('pt-BR')}</b></span><span>Folhas: <b>1 de 10</b></span>
 <span style="margin-left:auto;display:flex;align-items:center;gap:4px"><span style="color:var(--dm)">🔍</span><input type="text" id="bmSearch" placeholder="Buscar item, descrição ou tipo..." oninput="filterBM(this.value)" style="font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:200px"></span>
 </div>
 <table class="bm-table"><thead><tr><th>Item</th><th>Descrição</th><th>Tipo</th><th>Un.</th><th>P.Unit.(R$)</th><th>Ac.Ant.</th><th>No Mês</th><th>Total Ac.</th><th>Val.Ant.(R$)</th><th>Val.Mês(R$)</th><th>Val.Ac.(R$)</th><th>Saldo(R$)</th></tr></thead><tbody>
 ${rows.map(i=>{const tc=i.t==='HH'?'bm-hh':i.t==='VB'?'bm-vb':i.t==='VM'?'bm-vm':'bm-sv';const totalAcI=i.qNoMes;const valAc=totalAcI*i.pu;return`<tr><td>${i.it}</td><td style="text-align:left;max-width:180px;font-size:8px">${i.d}</td><td><span class="bm-type ${tc}">${i.t==='VM'?'VB/M':i.t}</span></td><td>${i.u}</td><td>${fR(i.pu)}</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:${i.qNoMes>0?'var(--cs)':'var(--dm)'}">${fd(i.qNoMes,2)}</td><td>${fd(totalAcI,2)}</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:${i.vNoMes>0?'var(--gn)':'var(--dm)'}">${fR(i.vNoMes)}</td><td>${fR(valAc)}</td><td style="color:${valAc>0?'var(--rd)':'var(--dm)'}">${fR(-valAc)}</td></tr>`}).join('')}
 </tbody><tfoot><tr style="font-weight:800;background:rgba(7,69,108,.08)"><td colspan="8" style="text-align:right">TOTAL GERAL</td><td style="color:var(--dm)">${fR(acumAnt)}</td><td style="color:var(--gn)">${fR(totalMesDisplay)}</td><td>${fR(totalAcum)}</td><td style="color:var(--rd)">${fR(saldoContrato)}</td></tr></tfoot></table>
-<div style="margin-top:8px;display:flex;justify-content:space-between;font-size:8px;color:var(--dm)"><div>CONTRATADA: Wellington Fernando dos Santos</div><div>FISCAL: Gleisson Baêta</div><div>GESTOR: Gleisson Baêta (19/03/2026)</div></div>
+<div style="margin-top:8px;display:flex;justify-content:space-between;font-size:8px;color:var(--dm)"><div>CONTRATADA: Wellington Fernando dos Santos</div><div>FISCAL: Gleisson Baêta</div><div>GESTOR: Gleisson Baêta (${new Date().toLocaleDateString('pt-BR')})</div></div>
 </div>
 <div class="cd"><div class="ct">Regras de Faturamento</div><div class="g g4">
 <div style="background:rgba(0,173,249,.05);border:1px solid rgba(0,173,249,.15);border-radius:6px;padding:8px"><div style="font-size:10px;font-weight:700;color:var(--cs)">HH — Homem-Hora</div><div style="font-size:9px;color:var(--dm);line-height:1.4;margin-top:2px">Horas por função: Normal, HE50%, HE100%, HE150%, ADN. Valor = qtd × preço unitário. Fonte: Espelho de Ponto.</div></div>
@@ -6244,7 +6244,7 @@ function processarManual(lines,file,st){
         }
         return true;
       });
-      if(rhComHoras&&c.trab>0){conflitos++;return}
+      if(rhComHoras){if(c.trab>0)conflitos++;return} // RH oficial tem horas: o dia é do RH (nem linha zerada do manual entra)
       ROBO_LANC.push({ref:ref,per:(b.ini||'')+' a '+(b.fim||''),data:d2,dow:DOW_PT[dia.dt.getDay()],phtd:'MAN',
         id:ef?ef.id:'',mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,
         hn:c.hn,he50:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,
@@ -6437,6 +6437,41 @@ window.roboSetAte=function(v){ROBO_UI.ate=v;roboUISave();renderRobo()};
 window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
 window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 window.roboSetParamStr=function(k,v){ROBO_PARAMS[k]=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
+// Competência do BOLETIM DE MEDIÇÃO — o BM original era fixo em Jan/Fev (MED1/MED1A);
+// agora segue a mesma regra de competência do robô (sequência consecutiva = último mês)
+window.__bmComp=function(){
+  try{
+    var meses=[];if(typeof SM!=='undefined'&&SM&&SM.size)meses=[...SM].sort(function(a,b){return a-b});
+    if(!meses.length)return null;
+    var comps=[];
+    for(var i=0;i<meses.length;i++){
+      var m=meses[i];
+      var temSeg=(i<meses.length-1)&&(meses[i+1]===m+1);
+      if(temSeg)continue;
+      comps.push(m);
+    }
+    var ano=2026;try{if(typeof Y!=='undefined')ano=Y}catch(e){}
+    var ps=comps.map(function(m){return{m:m,p:periodoDaCompetencia(m,ano)}});
+    return{
+      label:'MED '+ps.map(function(x){return MESES_NOMES[x.m]}).join('+')+'/'+ano,
+      num:ps.map(function(x){return MESES_NOMES[x.m]}).join('+')+'/'+ano,
+      periodo:ps.map(function(x){return x.p.desc}).join('  |  ')+(ps.length===1?(' · NF em '+ps[0].p.nf):'')
+    };
+  }catch(e){return null}
+};
+// campo editável "Acumulado anterior" no cabeçalho do BM (valor faturado nas medições anteriores)
+function bmAcumAntUI(){
+  try{
+    if(document.getElementById('bmAcumAntInp'))return;
+    var hdr=document.querySelector('#p-bm .hdr');if(!hdr)return;
+    var v=(+localStorage.getItem('cbsi-v15-bm-acumant'))||1608423.72;
+    var d=document.createElement('div');
+    d.style.cssText='font-size:8px;color:var(--dm);display:flex;align-items:center;gap:4px';
+    d.innerHTML='Acum. anterior (R$): <input id="bmAcumAntInp" type="number" step="0.01" value="'+v+'" style="width:110px;font-size:9px;padding:2px" onchange="bmSetAcumAnt(this.value)" title="Total faturado nas medições anteriores à competência selecionada — editável">';
+    hdr.appendChild(d);
+  }catch(e){}
+}
+window.bmSetAcumAnt=function(v){localStorage.setItem('cbsi-v15-bm-acumant',String(+v||0));try{renderBM()}catch(e){}};
 window.roboSetFeriados=function(v){
   ROBO_PARAMS.feriados=String(v||'').split(/[,;]/).map(function(s){return s.trim()}).filter(function(s){return /^\d{2}\/\d{2}\/\d{4}$/.test(s)});
   lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo();rtoast('📅 '+ROBO_PARAMS.feriados.length+' feriados salvos');
@@ -7015,7 +7050,8 @@ function pintRecalcDerivados(corte){
         real[mm-1]+=m2;laud[mm-1]++;
         if(l.pg==='EXTRA'||l.pm==='EXTRA')exc[mm-1]++;
       });
-      M.forEach(function(o,i){o.real=Math.round(real[i]*100)/100;o.laudos=laud[i];o.laudoExc=exc[i]});
+      // (o.laudos é o PLANO baseline mensal do sistema — não sobrescrever; o realizado vai em laudosReal e em D.meses.lr)
+      M.forEach(function(o,i){o.real=Math.round(real[i]*100)/100;o.laudosReal=laud[i];o.laudoExc=exc[i]});
       // DEMANDA DISPONIBILIZADA mensal (m² ajustado por laudo, no mês do término programado):
       // é a régua justa de produtividade — a demanda liberada pela VALE, não a capacidade teórica
       var prog=[0,0,0,0,0,0,0,0,0,0,0,0];
@@ -7026,13 +7062,14 @@ function pintRecalcDerivados(corte){
         if(!(mm>=1&&mm<=12))return;
         prog[mm-1]+=m2;
       });
-      M.forEach(function(o,i){if(prog[i]>0)o.prog=Math.round(prog[i]*100)/100});
+      M.forEach(function(o,i){o.prog=Math.round(prog[i]*100)/100});
       // RETROALIMENTAÇÃO → módulo de Lançamento (D.meses): o realizado mensal de pintura
       // passa a vir da planilha oficial (área realizada + laudos realizados por mês).
       // É isso que alimenta os cartões "LAUDOS MÊS / ÁREA MÊS", o gráfico Previsto×Realizado
       // do Dashboard e o One Page — antes paravam em fevereiro (entrada manual).
       try{
-        if(typeof em==='function'){
+        var anoAtual=2026;try{if(typeof Y!=='undefined')anoAtual=Y}catch(e){}
+        if(typeof em==='function'&&anoAtual===2026){ // laudos são de 2026 — não contaminar outros anos
           for(var mi=1;mi<=12;mi++){
             var o2=em(mi);
             o2.ar=Math.round(real[mi-1]*100)/100;
@@ -7084,6 +7121,77 @@ function fixDashPrevReal(){
         +'<span style="margin-left:auto;font-weight:800;color:#B8860B">✔ Aproveitamento da demanda: '+apG+'%</span>';
     }
   }catch(e){console.warn('fixDashPrevReal:',e)}
+}
+// EFETIVO DO MÊS — o cartão do Dashboard e o bloco do One Page mostravam um número fixo (cadastro).
+// Regra: nº de colaboradores DISTINTOS com registro de ponto no(s) mês(es) selecionado(s);
+// para meses ainda sem ponto carregado, cai no cadastro de Efetivos por data de admissão.
+function efetivoDoMes(){
+  var meses=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)meses=[...SM]}catch(e){}
+  var ano=2026;try{if(typeof Y!=='undefined')ano=Y}catch(e){}
+  var todos=!meses.length;
+  var set={},temPonto=false;
+  ROBO_LANC.forEach(function(l){
+    var p=String(l.data||'').split('/');if(p.length<3)return;
+    var m=+p[1],y=+p[2];if(y<100)y+=2000;
+    if(y===ano&&(todos||meses.indexOf(m)>=0)){set[l.id||l.nome]=l.cargo;temPonto=true}
+  });
+  if(temPonto)return{n:Object.keys(set).length,fonte:'ponto',cargos:Object.keys(set).map(function(k){return set[k]})};
+  var ultimo=todos?12:Math.max.apply(null,meses);
+  var fim=new Date(ano,ultimo,0,23,59);
+  var ativos=ROBO_EFET.filter(function(e){
+    if(!e.adm)return true;
+    var d=new Date(e.adm+'T00:00:00');
+    return isNaN(d.getTime())||d<=fim;
+  });
+  return{n:ativos.length,fonte:'cadastro',cargos:ativos.map(function(e){return e.cargo})};
+}
+function fixEfetivoCard(){
+  try{
+    var r=efetivoDoMes();
+    var g={PIN:0,ALP:0,AND:0,MEC:0,ADM:0};
+    r.cargos.forEach(function(c){
+      var n=normTxt(c);
+      if(/ALPINIS|ESCALADOR/.test(n))g.ALP++;
+      else if(/PINTOR|JATISTA|LETRISTA|PINTURA/.test(n))g.PIN++;
+      else if(/ANDAIME/.test(n))g.AND++;
+      else if(/CALDEIR|SOLDADOR|MECANIC|ELETRICISTA/.test(n))g.MEC++;
+      else g.ADM++;
+    });
+    var meses=[];try{meses=[...SM].sort(function(a,b){return a-b})}catch(e){}
+    var rot=meses.length?meses.map(function(m){return MESES_NOMES[m]}).join('+'):'ANO';
+    var origem=(r.fonte==='ponto')?('com ponto em '+rot):('cadastro até '+rot);
+    // cartão do Dashboard
+    var kps=document.querySelectorAll('#p-dash .kp');
+    for(var i=0;i<kps.length;i++){
+      var kl=kps[i].querySelector('.kl');
+      if(kl&&normTxt(kl.textContent)==='EFETIVO'){
+        var kv=kps[i].querySelector('.kv');if(kv)kv.textContent=r.n;
+        var ks=kps[i].querySelector('.ks');if(ks)ks.textContent=origem;
+        if(kv)kv.title='PIN '+g.PIN+' · AND '+g.AND+' · ALP '+g.ALP+' · MEC '+g.MEC+' · ADM '+g.ADM;
+        break;
+      }
+    }
+    // bloco do One Page
+    var opr=document.getElementById('p-opr');
+    if(opr){
+      var divs=opr.querySelectorAll('div');
+      for(var j=0;j<divs.length;j++){
+        if(divs[j].children.length)continue;
+        var t=(divs[j].textContent||'').trim();
+        if(/^PIN:\d+ AND:\d+/.test(t)){
+          divs[j].textContent='PIN:'+g.PIN+' AND:'+g.AND+' ALP:'+g.ALP+' MEC:'+g.MEC+' ADM:'+g.ADM+' · '+origem;
+          // o número grande fica logo acima, no mesmo bloco
+          var bloco=divs[j].parentElement;
+          if(bloco){
+            var nums=bloco.querySelectorAll('div');
+            for(var k=0;k<nums.length;k++){
+              if(nums[k].children.length===0&&/^\d{2,4}$/.test((nums[k].textContent||'').trim())){nums[k].textContent=r.n;break}
+            }
+          }
+        }
+      }
+    }
+  }catch(e){console.warn('fixEfetivoCard:',e)}
 }
 // reaplica o snapshot salvo ao abrir o sistema (o original não persistia os laudos)
 function pintReaplicarSnapshot(){
@@ -7556,8 +7664,10 @@ try{
   var _bpOrig=window.buildPintura;
   if(typeof _bpOrig==='function'){window.buildPintura=function(){var r=_bpOrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
   var _ROrig=window.R;
-  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}return r}}
-  setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}},1500);
+  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{bmAcumAntUI()}catch(e){}return r}}
+  var _rbmOrig=window.renderBM;
+  if(typeof _rbmOrig==='function'){window.renderBM=function(){var r=_rbmOrig.apply(this,arguments);try{bmAcumAntUI()}catch(e){}return r}}
+  setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}},1500);
 }catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
 try{fixMetricasJornada()}catch(e){}
