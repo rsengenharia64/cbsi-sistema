@@ -6278,8 +6278,12 @@ function roboProcessarPdf(file,statusEl){
     }
     var blocos=parseEspelhos(lines);
     if(!blocos.length)throw new Error('Nenhum espelho reconhecido em '+file.name);
-    var novos=0,semCad=[];
+    var novos=0,semCad=[],pulados=0;
     blocos.forEach(function(b){
+      // blindagem contra espelhos PARCIAIS antigos: se já existem MAIS dias carregados para este
+      // colaborador+referência (vindos de outro arquivo), este arquivo é uma versão anterior — pula
+      var jaTem=ROBO_LANC.filter(function(l){return l.id===b.id&&l.ref===b.ref&&l.phtd!=='MAN'&&l.arq!==file.name}).length;
+      if(jaTem>b.dias.length){pulados++;return}
       var ef=efetById(b.id);
       if(!ef)semCad.push(b.id+' '+b.nome);
       var cargo=ef?ef.cargo:'(sem cadastro)';
@@ -6305,7 +6309,7 @@ function roboProcessarPdf(file,statusEl){
     ROBO_ARQS.unshift({nome:file.name,fid:file._fid||'',quando:new Date().toLocaleString('pt-BR'),colabs:blocos.length,dias:blocos.reduce(function(s,b){return s+b.dias.length},0),ref:blocos[0].ref});
     roboSave();
     rlog('Robô de Ponto','Processar PDF',file.name+' → '+novos+' colaboradores');
-    st('✅ '+file.name+': '+novos+' colaboradores processados'+(semCad.length?(' · ⚠️ sem cadastro: '+semCad.length):''));
+    st('✅ '+file.name+': '+novos+' colaboradores processados'+(semCad.length?(' · ⚠️ sem cadastro: '+semCad.length):'')+(pulados?(' · '+pulados+' pulados (versão mais completa já carregada)'):''));
     return{colabs:novos,semCad:semCad};
   });
 }
@@ -6966,6 +6970,7 @@ function pintImportarPlanilha(wb,fonteNome){
   window.__PINT_IMPORT=snap;
   try{buildPintura()}catch(e){}
   try{R()}catch(e){}
+  try{persistAll()}catch(e){}
   setTimeout(fixPintFonte,300);
   rlog('Pintura','Importação completa',fonteNome+' → '+atualizados+' atualizados, '+novos+' novos'+(corte?(', corte '+corte):''));
   return{atualizados:atualizados,novos:novos,corte:corte};
@@ -7011,6 +7016,19 @@ function pintRecalcDerivados(corte){
         if(l.pg==='EXTRA'||l.pm==='EXTRA')exc[mm-1]++;
       });
       M.forEach(function(o,i){o.real=Math.round(real[i]*100)/100;o.laudos=laud[i];o.laudoExc=exc[i]});
+      // RETROALIMENTAÇÃO → módulo de Lançamento (D.meses): o realizado mensal de pintura
+      // passa a vir da planilha oficial (área realizada + laudos realizados por mês).
+      // É isso que alimenta os cartões "LAUDOS MÊS / ÁREA MÊS", o gráfico Previsto×Realizado
+      // do Dashboard e o One Page — antes paravam em fevereiro (entrada manual).
+      try{
+        if(typeof em==='function'){
+          for(var mi=1;mi<=12;mi++){
+            var o2=em(mi);
+            o2.ar=Math.round(real[mi-1]*100)/100;
+            o2.lr=laud[mi-1];
+          }
+        }
+      }catch(e){console.warn('retroalimentação D.meses:',e)}
     }
   }catch(e){console.warn('PINT_MES recalc:',e)}
 }
@@ -7036,6 +7054,7 @@ function fixPintFonte(){
       var t=el.textContent||'';
       var novo=t;
       if(t.indexOf('Painel_de_Pintura_2026_rev04.xlsx')>=0)novo=novo.replace('Painel_de_Pintura_2026_rev04.xlsx',snap.fonte||'Painel de Pintura (Drive)');
+      if(/Planilha Rev\.?\s?04/i.test(novo))novo=novo.replace(/Planilha Rev\.?\s?04/i,'Planilha do Drive'+(snap.corte?(' · corte '+snap.corte):''));
       if(snap.corte&&/(Data )?Corte:\s*\d{2}\/\d{2}\/\d{4}/.test(t))novo=novo.replace(/(Data )?Corte:\s*\d{2}\/\d{2}\/\d{4}/,function(mm,p1){return (p1||'')+'Corte: '+snap.corte});
       if(novo!==t)el.textContent=novo;
     }
