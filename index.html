@@ -6331,7 +6331,7 @@ window.roboRecalcular=function(silencioso){
       var c=calcDiaCliente(l.mk.split('|').filter(Boolean),l.dow,l.data);
       l.hn=c.hn;l.he50=c.he50;l.he100=c.he100;l.he150=c.he150;l.adn=c.adn;l.trab=c.trab;n++;return;
     }
-    if(!l.mk){semMk++;return}
+    if(!l.mk){if((+l.trab||0)>0||(+l.he150||0)>0||(+l.he100||0)>0)semMk++;return} // só conta como pendente se tem horas (dias zerados sem marcação são normais)
     var marcas=l.mk.split('|').filter(Boolean);
     if(ROBO_PARAMS.calcRegra==='cliente'){
       var c2=calcDiaCliente(marcas,l.dow,l.data);
@@ -6344,6 +6344,7 @@ window.roboRecalcular=function(silencioso){
     n++;
   });
   roboSave();
+  try{lss('cbsi-v15-robo-calcver','premissas-v2|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100))}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -7772,6 +7773,26 @@ try{
 try{fixMetricasJornada()}catch(e){}
 try{renderRobo()}catch(e){console.warn('Robo init:',e)}
 try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
+// PROPAGAÇÃO AUTOMÁTICA DE REGRA: se a regra de cálculo mudou desde a última abertura
+// deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
+// marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
+try{
+  var calcAssin='premissas-v2|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100);
+  if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
+    var rc=window.roboRecalcular(true);
+    lss('cbsi-v15-robo-calcver',calcAssin);
+    if(rc.semMarcacoes>0&&DRIVE_CFG.apiKey){
+      rtoast('🔁 Regra de cálculo atualizada — reprocessando os espelhos do Drive automaticamente ('+rc.semMarcacoes+' lançamentos da versão anterior)…');
+      ROBO_LANC=[];ROBO_ARQS=[];roboSave();
+      setTimeout(function(){try{driveMonitor()}catch(e){}},5000);
+    }else if(rc.recalculados>0){
+      rtoast('🔁 Regra de cálculo atualizada — '+rc.recalculados+' lançamentos recalculados automaticamente');
+      try{renderRobo()}catch(e){}
+    }
+  }else{
+    lss('cbsi-v15-robo-calcver',calcAssin);
+  }
+}catch(e){console.warn('calcver:',e)}
 try{renderAndaimes()}catch(e){console.warn('Andaimes init:',e)}
 // gancho de diagnóstico (usado nos testes automatizados)
 window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,calcDiaCliente:calcDiaCliente,ensurePdfJs:ensurePdfJs};
