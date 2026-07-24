@@ -6268,7 +6268,7 @@ function processarManual(lines,file,st){
 // ---------------------------------------------------------------------------
 // REGRA DE CÁLCULO DO CLIENTE — réplica exata da planilha "PONTO AJUSTADO"
 // (PONTO JULHO 21.06 a 20.07), validada para cobrança:
-//  · H. trabalhada = ÚLTIMA saída − PRIMEIRA entrada − 1h de almoço (fixo)
+//  · H. trabalhada = ÚLTIMA saída − PRIMEIRA entrada − 1h de almoço (só quando se trabalha após o almoço: jornada > 6h ou saída ≥ 12h30; meio-período de manhã não desconta)
 //  · Dia útil: HN até 9h (sexta 8h); HE 50% só se exceder 15 min de tolerância,
 //    e aí conta a partir da jornada (H − 9h / H − 8h)
 //  · Sábado: TODAS as horas → HE 100% · Domingo/Feriado: TODAS → HE 150%
@@ -6298,23 +6298,17 @@ function calcDiaCliente(marcas,dow,dataStr){
     else if(dN==='SAB'){r.he100=H}
     else{
       var j=(dN==='SEX')?8:9;
-      if(a<12){
-        // REGRA DAS PREMISSAS (turno diurno, ancorada no horário programado 07h → 17h / sex 16h):
-        // · HE = somente o tempo APÓS o fim programado da jornada (premissas 1 e 3)
-        // · minutos de entrada antecipada NUNCA viram extra — apenas completam a HN (premissas 3 e 5)
-        // · atraso na entrada deduz da HN, não da HE (premissa 1: 07h01→18h02 = HN 08h59 + HE 01h02)
-        // · tolerância de 15 min sobre a extra (premissas 2 e 5: até 15 min não contabiliza)
-        var fimProg=7+j+1;                      // 17h (seg–qui) · 16h (sex)
-        var heFim=Math.max(0,b-fimProg);
-        if(heFim<=0.25)heFim=0;                 // tolerância de 15 min
-        r.he50=heFim;
-        r.hn=Math.min(j,Math.max(0,H-heFim));
-      }else{
-        // turno vespertino/noturno (sem âncora nas premissas): jornada cheia + excedente
-        r.hn=Math.min(H,j);
-        r.he50=(H>j+0.25)?(H-j):0;
-      }
-      // fator de reconhecimento da HE 50% (De Acordo do cliente) — 100% = integral apurada
+      // MODELO EXATO DA PLANILHA "PONTO AJUSTADO" (confirmado linha a linha — HN e HE conferem):
+      // · HN = min(H, jornada normal)  → 9h seg–qui, 8h sex
+      // · HE 50% = excedente de H sobre a jornada normal, com tolerância de 15 min (H − j, só se H > j+0,25)
+      // · a planilha NÃO ancora no horário programado: a entrada antecipada entra no cômputo de H
+      //   (premissa 3 "não contar 10 min antecedentes" é intenção do texto, mas a apuração real usa H − j)
+      r.hn=Math.min(H,j);
+      r.he50=(H>j+0.25)?(H-j):0;
+      // PREMISSA LIMITANTE — "De Acordo HE": sobre a HE 50% apurada, o gestor zera dias específicos
+      // não reconhecidos pelo cliente (na compet. JUL foram 131,6h de 412h → ~68% reconhecido).
+      // Não é regra determinística (dias zerados 0,25–2,07h se sobrepõem aos mantidos 0,63–1,65h);
+      // o campo he50Fator aplica o % médio reconhecido para aproximar o total pagável.
       var fat=(+P.he50Fator||100)/100;
       if(fat<1)r.he50=r.he50*fat;
     }
@@ -6344,7 +6338,7 @@ window.roboRecalcular=function(silencioso){
     n++;
   });
   roboSave();
-  try{lss('cbsi-v15-robo-calcver','premissas-v2|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100))}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v3|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100))}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -6798,6 +6792,9 @@ function roboExportFormatado(){
    ['P','As marcações do dia são tomadas em pares entrada/saída (ex.: 06:53 → 12:00 + 13:00 → 16:56). Quando o turno cruza a meia-noite (escalas CB81/CB82, ex.: 19:00 → 05:00), soma-se 24h ao horário de saída antes da subtração. Horas Trab = soma dos intervalos, em horas decimais com 2 casas.'],
    ['S','3. CLASSIFICAÇÃO DAS HORAS (HN, HE 50%, HE 100%, HE 150%, AD.Not)'],
    ['P','A classificação usa a coluna "Conta / Valor" do próprio espelho — o cálculo oficial do RH — como fonte primária: "Hora Extra 50%" → HE 50% · "Hora Extra 100%" → HE 100% · "HE 150% Pagar" → HE 150% · "Adic. Not. Informativo" e variações ("Adic Not HE …") → AD. Noturno. HN = Horas Trabalhadas − (HE50 + HE100 + HE150), nunca negativa. Dias sem marcações (Falta, Licença, DSR, COMP não trabalhado, Treinamento etc.) contam zero hora e a ocorrência fica registrada em Observações.'],
+   ['S','3-B. REGRA DO CLIENTE — RÉPLICA DA PLANILHA "PONTO AJUSTADO" (cobrança validada com a VALE)'],
+   ['P','Quando a regra ativa é "CLIENTE" (padrão), as horas são reclassificadas pelo mesmo racional da planilha manual validada (PONTO JULHO 21.06→20.07), confirmado linha a linha (HN, HE 100% e HE 150% batem 100%): (1) H trabalhada = última saída − primeira entrada − 1h de almoço, sendo o almoço descontado SOMENTE quando se trabalha após o horário de almoço (jornada > 6h ou saída ≥ 12h30) — meio-período de manhã não desconta almoço; (2) Dia útil: HN = mín(H, 9h de seg a qui / 8h na sexta); HE 50% = excedente de H sobre a jornada normal, com tolerância de 15 min (não conta até 15 min de extra); (3) Sábado = todas as horas em HE 100% (sem HN); (4) Domingo/feriado = todas as horas em HE 150% (sem HN); (5) Sáb/dom/feriado contam a partir de 06h45; (6) Adicional noturno 20% = horas antes das 06h (05h na sexta) e após 22h — obs.: na planilha do PQ o AD.N. não é apurado (fica zerado).'],
+   ['P','PREMISSA LIMITANTE — "DE ACORDO HE": sobre a HE 50% já apurada, o gestor zera manualmente os dias específicos de hora-extra que o cliente NÃO reconhece na cobrança (o "De Acordo" negociado). Na competência JULHO foram cortadas 131,6h de 412h apuradas (≈ 68% reconhecido), em 143 lançamentos de funções diversas. Esse corte NÃO é uma fórmula determinística: as HE zeradas (0,25h a 2,07h) se sobrepõem em magnitude às mantidas (0,63h a 1,65h), portanto dependem de decisão caso a caso na validação com o cliente. O sistema expõe o campo "HE50 reconhecida (%)" (he50Fator) para aplicar o percentual médio reconhecido e aproximar o total efetivamente pagável; por padrão apura a HE 50% integral (bruta, antes do De Acordo).'],
    ['S','4. DE × PARA DE FUNÇÕES (QQP)'],
    ['P','O cargo do RH (ex.: PINTOR INDUSTRIAL I, PINTOR JATISTA) é convertido na Função Cobrada do contrato (ex.: Pintor Industrial) pela tabela De×Para (aba própria), editável no sistema. A consolidação QQP soma HN/HE/ADN de todos os colaboradores de cada função cobrada.'],
    ['S','5. VALOR R$ (BM)'],
@@ -6805,7 +6802,7 @@ function roboExportFormatado(){
    ['S','6. FÓRMULAS EMBUTIDAS NESTA PLANILHA'],
    ['P','Aba "QQP Consolidado": HN..AD.Not = SUMIFS sobre a aba Detalhe filtrando pela Função Cobrada (coluna J); Total = SUM(HN:HE150). Aba "Por Colaborador": Total Horas = SUM(HN:HE150). Alterando valores na aba Detalhe, os consolidados recalculam automaticamente no Excel.'],
    ['S','7. PREMISSAS E LIMITES'],
-   ['P','a) A coluna Conta/Valor do RH é considerada a verdade oficial das horas extras e adicional noturno; b) Adicional noturno "informativo" é somado em AD.Not; c) Descontos (atrasos, saídas antecipadas, ausências parciais) constam em Observações e já estão refletidos nas marcações; d) Colaboradores sem cadastro no Efetivos aparecem marcados "(sem cadastro)" e sem função cobrada até atualização do cadastro; e) Divergências devem ser tratadas atualizando o Efetivos ou o De×Para no sistema e reprocessando o PDF (idempotente por colaborador+referência).'],
+   ['P','a) A coluna Conta/Valor do RH é considerada a verdade oficial das horas extras e adicional noturno; b) Adicional noturno "informativo" é somado em AD.Not; c) Descontos (atrasos, saídas antecipadas, ausências parciais) constam em Observações e já estão refletidos nas marcações; d) Colaboradores sem cadastro no Efetivos aparecem marcados "(sem cadastro)" e sem função cobrada até atualização do cadastro; e) Divergências devem ser tratadas atualizando o Efetivos ou o De×Para no sistema e reprocessando o PDF (idempotente por colaborador+referência); f) NA REGRA DO CLIENTE, a HE 50% apurada é BRUTA (integral); o corte "De Acordo HE" reconhecido pelo cliente é aplicado pelo campo "HE50 reconhecida (%)" — ver seção 3-B.'],
    ['P',''],
    ['P','Documento gerado automaticamente pelo Sistema CBSI Gestão Operacional v15 · Robô de Ponto · '+new Date().toLocaleString('pt-BR')]
   ];
@@ -7777,7 +7774,7 @@ try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
 try{
-  var calcAssin='premissas-v2|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100);
+  var calcAssin='planilha-v3|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100);
   if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
     var rc=window.roboRecalcular(true);
     lss('cbsi-v15-robo-calcver',calcAssin);
