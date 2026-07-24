@@ -5854,8 +5854,9 @@ var ROBO_PARAMS_DEFAULT={
   medIni:21, medFim:20,          // período de apuração da medição: dia 21 -> dia 20
   compOffset:0,                  // competência = mês do TÉRMINO da apuração (21/06–20/07 = JUL; a NF sai no mês seguinte)
   calcRegra:'cliente',           // 'cliente' = regra de cobrança validada (planilha PONTO AJUSTADO) · 'rh' = coluna Conta/Valor do espelho
-  he50Fator:100,                 // % da HE 50% apurada reconhecida na cobrança (os "De Acordo" do cliente cortam parte)
-  paramsV:3,                     // versão das regras (migração automática)
+  he50Fator:100,                 // (legado) % global — substituído pela autorização por dia (módulo De Acordo HE)
+  heAuthPadrao:'nao',            // De Acordo HE: 'nao' = HE 50% NÃO paga por padrão (só com autorização); 'sim' = paga por padrão
+  paramsV:4,                     // versão das regras (migração automática)
   pontoIni:16, pontoFim:15,      // período do espelho de ponto (informativo)
   jornadaPadraoDia:9,             // horas de trabalho num dia cheio (07-17 com 1h almoço)
   adnIni:22, adnFim:5,            // janela do adicional noturno (usado só no cálculo próprio)
@@ -5880,6 +5881,32 @@ Object.keys(ROBO_PARAMS_DEFAULT).forEach(function(k){if(ROBO_PARAMS[k]==null)ROB
 if((+ROBO_PARAMS.paramsV||1)<2){ROBO_PARAMS.compOffset=0;ROBO_PARAMS.paramsV=2;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 // v3: regra de cálculo de horas passa a seguir a planilha de cobrança validada pelo cliente (PONTO AJUSTADO)
 if((+ROBO_PARAMS.paramsV||1)<3){ROBO_PARAMS.calcRegra='cliente';ROBO_PARAMS.paramsV=3;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
+// v4: "De Acordo HE" — HE 50% deixa de ser paga por padrão; passa a exigir autorização por dia (email)
+if((+ROBO_PARAMS.paramsV||1)<4){ROBO_PARAMS.heAuthPadrao='nao';ROBO_PARAMS.he50Fator=100;ROBO_PARAMS.paramsV=4;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
+
+// ---------------------------------------------------------------------------
+// DE ACORDO HE — autorização manual da HE 50% (o cliente só paga HE autorizada por email)
+// Store separado (sobrevive ao reprocessamento dos PDFs), chaveado por colaborador+data.
+//   HE_AUTH['MATRICULA|DD/MM/AA'] = {rec:true/false, ref:'email 15/07 Fulano', h:null|horas_parciais}
+// ---------------------------------------------------------------------------
+var HE_AUTH=lsg('cbsi-v15-robo-heauth',{});
+function heAuthSave(){lss('cbsi-v15-robo-heauth',HE_AUTH)}
+function heKey(l){return (l.mat||l.nome||l.id||'?')+'|'+(l.data||'')}
+// aplica a decisão de autorização sobre a HE 50% apurada de cada lançamento
+// (l.he50ap = apurada bruta, imutável · l.he50 = paga/reconhecida)
+function aplicarDeAcordoHE(){
+  var padraoSim=(ROBO_PARAMS.heAuthPadrao==='sim');
+  (ROBO_LANC||[]).forEach(function(l){
+    if(l.he50ap==null)l.he50ap=+l.he50||0;   // 1ª vez: snapshot da apurada
+    var ap=+l.he50ap||0;
+    if(ap<=0.001){l.he50=0;return}
+    var a=HE_AUTH[heKey(l)];
+    var rec=(a&&a.rec!=null)?!!a.rec:padraoSim;
+    if(rec)l.he50=(a&&a.h!=null&&a.h!=='')?Math.min(ap,Math.max(0,+a.h||0)):ap;
+    else l.he50=0;
+    l.he50=Math.round(l.he50*100)/100;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -6323,22 +6350,23 @@ window.roboRecalcular=function(silencioso){
     if(l.phtd==='MAN'){ // ponto manual: reclassifica excedente com a tolerância vigente
       if(!l.mk)return;
       var c=calcDiaCliente(l.mk.split('|').filter(Boolean),l.dow,l.data);
-      l.hn=c.hn;l.he50=c.he50;l.he100=c.he100;l.he150=c.he150;l.adn=c.adn;l.trab=c.trab;n++;return;
+      l.hn=c.hn;l.he50=c.he50;l.he50ap=c.he50;l.he100=c.he100;l.he150=c.he150;l.adn=c.adn;l.trab=c.trab;n++;return;
     }
     if(!l.mk){if((+l.trab||0)>0||(+l.he150||0)>0||(+l.he100||0)>0)semMk++;return} // só conta como pendente se tem horas (dias zerados sem marcação são normais)
     var marcas=l.mk.split('|').filter(Boolean);
     if(ROBO_PARAMS.calcRegra==='cliente'){
       var c2=calcDiaCliente(marcas,l.dow,l.data);
-      l.hn=c2.hn;l.he50=c2.he50;l.he100=c2.he100;l.he150=c2.he150;l.adn=c2.adn;l.trab=c2.trab;
+      l.hn=c2.hn;l.he50=c2.he50;l.he50ap=c2.he50;l.he100=c2.he100;l.he150=c2.he150;l.adn=c2.adn;l.trab=c2.trab;
     }else{
       var dia={marcas:marcas,contas:(l.ct?l.ct.split(';').filter(Boolean).map(function(s){var p=s.split('~');return{t:p[0],v:p[1]}}):[])};
       var c3=calcDia(dia);
-      l.hn=c3.hn;l.he50=c3.he50;l.he100=c3.he100;l.he150=c3.he150;l.adn=c3.adn;l.trab=c3.trab;
+      l.hn=c3.hn;l.he50=c3.he50;l.he50ap=c3.he50;l.he100=c3.he100;l.he150=c3.he150;l.adn=c3.adn;l.trab=c3.trab;
     }
     n++;
   });
+  aplicarDeAcordoHE();   // aplica autorização (HE 50% não paga sem De Acordo)
   roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v3|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100))}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v4|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -6348,6 +6376,46 @@ window.roboRecalcular=function(silencioso){
 window.roboSetRegra=function(v){
   ROBO_PARAMS.calcRegra=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
   window.roboRecalcular();
+};
+// ---- COMANDOS DO MÓDULO DE ACORDO HE (autorização manual da HE 50%) ----
+// marca/desmarca a autorização de UM lançamento (colaborador+dia)
+window.heAuthSet=function(key,rec){
+  HE_AUTH[key]=HE_AUTH[key]||{};HE_AUTH[key].rec=!!rec;heAuthSave();
+  aplicarDeAcordoHE();roboSave();renderRobo();
+};
+window.heAuthRef=function(key,ref){
+  HE_AUTH[key]=HE_AUTH[key]||{};HE_AUTH[key].ref=ref;
+  if(HE_AUTH[key].rec==null)HE_AUTH[key].rec=true; // digitou a autorização → reconhece
+  heAuthSave();aplicarDeAcordoHE();roboSave();renderRobo();
+};
+window.heAuthParcial=function(key,h){
+  HE_AUTH[key]=HE_AUTH[key]||{};HE_AUTH[key].h=(h===''||h==null)?null:(+h);
+  if(HE_AUTH[key].rec==null&&HE_AUTH[key].h!=null)HE_AUTH[key].rec=true;
+  heAuthSave();aplicarDeAcordoHE();roboSave();renderRobo();
+};
+// define o padrão global (sim = paga por padrão · nao = só com autorização)
+window.heAuthSetPadrao=function(v){
+  ROBO_PARAMS.heAuthPadrao=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
+  aplicarDeAcordoHE();roboSave();
+  try{lss('cbsi-v15-robo-calcver','planilha-v4|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
+  renderRobo();
+};
+// AÇÃO EM LOTE: reconhece / não reconhece todos os lançamentos com HE 50% do período em tela
+window.heAuthLote=function(rec){
+  var regs=(window.FA&&window.FA.regs)?window.FA.regs:ROBO_LANC;
+  var n=0;
+  regs.forEach(function(l){if((+l.he50ap||0)>0.001){HE_AUTH[heKey(l)]=HE_AUTH[heKey(l)]||{};HE_AUTH[heKey(l)].rec=!!rec;n++}});
+  heAuthSave();aplicarDeAcordoHE();roboSave();
+  rtoast('🔐 De Acordo HE: '+(rec?'reconhecidas':'não reconhecidas')+' '+n+' HE 50% do período em tela.');
+  renderRobo();
+};
+// COMANDO DO GESTOR: aplica todas as autorizações e integra (recalcula totais/dashboard/BM)
+window.heAuthAplicar=function(){
+  aplicarDeAcordoHE();roboSave();
+  try{if(typeof buildDash==='function')buildDash()}catch(e){}
+  try{if(typeof renderPonto==='function')renderPonto();else renderRobo()}catch(e){renderRobo()}
+  var apu=0,rec=0;(window.FA&&window.FA.regs?window.FA.regs:ROBO_LANC).forEach(function(l){apu+=(+l.he50ap||0);rec+=(+l.he50||0)});
+  rtoast('✔ De Acordo HE aplicado: HE 50% apurada '+apu.toFixed(1)+'h → reconhecida '+rec.toFixed(1)+'h (não reconhecida '+(apu-rec).toFixed(1)+'h). Use "Aplicar no BM" para levar ao Boletim.');
 };
 
 // processa PDFs do espelho → lançamentos
@@ -6391,11 +6459,12 @@ function roboProcessarPdf(file,statusEl){
           if(c.trab<=0&&c.he150<=0)return;
           ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.phtd==='MAN'&&l.data===d.data&&(l.id===b.id||normTxt(l.nome)===nomeN))});
         }
-        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; '),arq:file.name,
+        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he50ap:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; '),arq:file.name,
           mk:d.marcas.join('|'),ct:d.contas.map(function(x){return x.t+'~'+x.v}).join(';')});
       });
       novos++;
     });
+    aplicarDeAcordoHE();   // aplica autorização de HE 50% aos lançamentos recém-processados
     ROBO_ARQS=ROBO_ARQS.filter(function(a){return a.nome!==file.name});
     ROBO_ARQS.unshift({nome:file.name,fid:file._fid||'',quando:new Date().toLocaleString('pt-BR'),colabs:blocos.length,dias:blocos.reduce(function(s,b){return s+b.dias.length},0),ref:blocos[0].ref});
     roboSave();
@@ -6521,6 +6590,55 @@ function roboConsolidaRegs(regs){
     c.hn+=l.hn;c.he50+=l.he50;c.he100+=l.he100;c.he150+=l.he150;c.adn+=l.adn;if(l.trab>0)c.dias++;
   });
   return{porFunc:porFunc,porColab:porColab,regs:regs||[]};
+}
+// PAINEL "DE ACORDO HE" — registro de HE 50% por colaborador + autorização manual
+function deAcordoHTML(FA){
+  var regs=(FA&&FA.regs)?FA.regs:[];
+  var lst=regs.filter(function(l){return (+l.he50ap||0)>0.001}); // só dias com HE 50% apurada
+  var apu=0,rec=0;lst.forEach(function(l){apu+=(+l.he50ap||0);rec+=(+l.he50||0)});
+  var cort=apu-rec,padrao=ROBO_PARAMS.heAuthPadrao;
+  var GH='rgba(120,120,120,.10)';
+  var h='<div style="border:1px solid var(--bd);border-radius:8px;padding:8px;margin-bottom:8px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
+    +'<div style="font-size:11px;font-weight:800;color:var(--ca)">🔐 DE ACORDO HE — Autorização da HE 50% <span style="font-weight:400;color:var(--dm)">(o cliente só paga hora extra autorizada por email)</span></div>'
+    +'<div style="font-size:9px;color:var(--dm)">Padrão: <select onchange="heAuthSetPadrao(this.value)" style="font-size:9px"><option value="nao" '+(padrao==='nao'?'selected':'')+'>NÃO pagar sem autorização</option><option value="sim" '+(padrao==='sim'?'selected':'')+'>Pagar por padrão</option></select></div>'
+    +'</div>';
+  h+='<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;margin:6px 0">'
+    +'<span>HE 50% apurada: <b>'+h2hm(apu)+'</b></span>'
+    +'<span style="color:var(--gn)">Reconhecida (a pagar): <b>'+h2hm(rec)+'</b></span>'
+    +'<span style="color:var(--rd)">Não reconhecida (sem autorização): <b>'+h2hm(cort)+'</b></span>'
+    +'<span style="color:var(--dm)">'+lst.length+' dia(s) c/ HE · '+lst.filter(function(l){return (+l.he50||0)>0.001}).length+' autorizado(s)</span>'
+    +'</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+    +'<button onclick="heAuthLote(true)" style="font-size:9px;font-weight:700;padding:4px 8px;background:var(--gn);color:#fff;border:none;border-radius:5px;cursor:pointer">✔ Reconhecer todas do período</button>'
+    +'<button onclick="heAuthLote(false)" style="font-size:9px;font-weight:700;padding:4px 8px;border:1px solid var(--rd);color:var(--rd);border-radius:5px;background:transparent;cursor:pointer">✖ Não reconhecer todas</button>'
+    +'<button onclick="heAuthAplicar()" style="font-size:9px;font-weight:700;padding:4px 8px;background:var(--ca);color:#fff;border:none;border-radius:5px;cursor:pointer">↻ Aplicar e recalcular</button>'
+    +'</div>';
+  if(!lst.length){h+='<div style="font-size:9px;color:var(--dm)">Nenhuma HE 50% apurada no período selecionado.</div></div>';return h}
+  var byC={};lst.forEach(function(l){var k=l.nome||l.mat||l.id;(byC[k]=byC[k]||[]).push(l)});
+  h+='<details><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">📋 Registro de HE 50% por colaborador — autorizar dia a dia ('+Object.keys(byC).length+' colaboradores · '+lst.length+' dias)</summary>';
+  h+='<div style="max-height:340px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador / Dia</th><th>Entrada→Saída</th><th>HE apur.</th><th>Autorizar?</th><th>HE paga</th><th style="text-align:left">Autorização (email/ref)</th></tr>';
+  Object.keys(byC).sort().forEach(function(nome){
+    var arr=byC[nome].sort(function(a,b){return a.data<b.data?-1:1});
+    var sa=0,sr=0;arr.forEach(function(l){sa+=(+l.he50ap||0);sr+=(+l.he50||0)});
+    h+='<tr style="background:'+GH+'"><td colspan="6" style="padding:3px;font-weight:700">'+nome+' <span style="font-weight:400;color:var(--dm)">— apur. '+h2hm(sa)+' · paga '+h2hm(sr)+' · cortada '+h2hm(sa-sr)+'</span></td></tr>';
+    arr.forEach(function(l){
+      var key=heKey(l),a=HE_AUTH[key]||{};
+      var marc=(l.mk||'').split('|').filter(Boolean),ent=marc[0]||'—',sai=marc[marc.length-1]||'—';
+      var recNow=(+l.he50||0)>0.001;
+      h+='<tr style="border-bottom:1px solid var(--bd)">'
+       +'<td style="padding:3px;text-align:left">'+l.data+' <span style="color:var(--dm)">'+(l.dow||'')+'</span></td>'
+       +'<td style="text-align:center">'+ent+'→'+sai+'</td>'
+       +'<td style="text-align:right">'+n2(+l.he50ap||0)+'</td>'
+       +'<td style="text-align:center"><input type="checkbox" '+(recNow?'checked':'')+' onchange="heAuthSet(\''+key+'\',this.checked)"></td>'
+       +'<td style="text-align:right;color:'+(recNow?'var(--gn)':'var(--rd)')+';font-weight:700">'+n2(+l.he50||0)+'</td>'
+       +'<td style="text-align:left"><input type="text" value="'+String(a.ref||'').replace(/"/g,'&quot;')+'" onchange="heAuthRef(\''+key+'\',this.value)" placeholder="nº/data do email" style="width:150px;font-size:8px;padding:2px"></td>'
+       +'</tr>';
+    });
+  });
+  h+='</table></div></details></div>';
+  return h;
 }
 window.roboSetModo=function(v){ROBO_UI.modo=v;roboUISave();renderRobo()};
 window.roboSetDe=function(v){ROBO_UI.de=v;roboUISave();renderRobo()};
@@ -6667,7 +6785,7 @@ function ensureExcelJS(){
   if(window.ExcelJS)return Promise.resolve();
   return loadScriptAny(['exceljs.min.js','libs/exceljs.min.js','https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js']);
 }
-var XC={navy:'FF07456C',blue:'FF00ADF9',orange:'FFD95727',green:'FF00C48C',light:'FFF2F7FA',zebra:'FFEAF3F8',white:'FFFFFFFF',grayTx:'FF5A6B76'};
+var XC={navy:'FF07456C',blue:'FF00ADF9',orange:'FFD95727',green:'FF00C48C',light:'FFF2F7FA',zebra:'FFEAF3F8',white:'FFFFFFFF',grayTx:'FF5A6B76',red:'FFD64545'};
 function xfill(c){return{type:'pattern',pattern:'solid',fgColor:{argb:c}}}
 function xborda(){var t={style:'thin',color:{argb:'FFB9CBD6'}};return{top:t,left:t,bottom:t,right:t}}
 function xHead(row,alt){row.eachCell(function(cell){cell.fill=xfill(alt||XC.navy);cell.font={bold:true,color:{argb:XC.white},size:10,name:'Calibri'};cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};cell.border=xborda()});row.height=22}
@@ -6782,6 +6900,26 @@ function roboExportFormatado(){
     row.eachCell(function(cell){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra)});
   });
   // ===== ABA MEMORIAL DE CÁLCULO =====
+  // ===== ABA HE 50% NÃO RECONHECIDA (registro de horas não remuneradas — De Acordo HE) =====
+  var wnr=wb.addWorksheet('HE 50% Não Reconhecida',{views:[{state:'frozen',ySplit:1}]});
+  wnr.columns=[{header:'Matrícula',width:11},{header:'Nome',width:32},{header:'Função Cobrada',width:24},{header:'Data',width:10},{header:'Dia',width:6},{header:'Entrada',width:9},{header:'Saída',width:9},{header:'HE 50% Apurada',width:14},{header:'HE 50% Paga',width:12},{header:'HE 50% Cortada',width:14},{header:'Status',width:16},{header:'Autorização (email/ref)',width:28}];
+  xHead(wnr.getRow(1),XC.orange);
+  var heLst=(con.regs||[]).filter(function(l){return (+l.he50ap||0)>0.001}).sort(function(a,b){return (a.nome+a.data)<(b.nome+b.data)?-1:1});
+  var tApu=0,tPago=0;
+  heLst.forEach(function(l,ix){
+    var ap=+l.he50ap||0,pg=+l.he50||0,corte=Math.max(0,ap-pg);tApu+=ap;tPago+=pg;
+    var marc=(l.mk||'').split('|').filter(Boolean),ent=marc[0]||'',sai=marc[marc.length-1]||'';
+    var a=(HE_AUTH[heKey(l)]||{});
+    var status=pg<=0.001?'NÃO reconhecida':(pg<ap-0.01?'Parcial':'Reconhecida');
+    var row=wnr.addRow([l.mat,l.nome,l.funcQQP,l.data,l.dow,ent,sai,r2(ap),r2(pg),r2(corte),status,a.ref||'']);
+    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);
+      if(cn>=8&&cn<=10){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}
+      if(cn===11){cell.font={size:9,bold:true,color:{argb:pg<=0.001?XC.red:(pg<ap-0.01?XC.orange:XC.green)}}}});
+  });
+  var trow=wnr.addRow(['','','','','','','TOTAL',r2(tApu),r2(tPago),r2(tApu-tPago),'','']);
+  trow.eachCell(function(cell,cn){cell.font={bold:true,size:9};if(cn>=8&&cn<=10){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}});
+  wnr.autoFilter={from:'A1',to:'L1'};
+
   var wm=wb.addWorksheet('Memorial de Cálculo',{views:[{showGridLines:false}]});
   wm.columns=[{width:4},{width:118}];
   var mem=[
@@ -6794,7 +6932,8 @@ function roboExportFormatado(){
    ['P','A classificação usa a coluna "Conta / Valor" do próprio espelho — o cálculo oficial do RH — como fonte primária: "Hora Extra 50%" → HE 50% · "Hora Extra 100%" → HE 100% · "HE 150% Pagar" → HE 150% · "Adic. Not. Informativo" e variações ("Adic Not HE …") → AD. Noturno. HN = Horas Trabalhadas − (HE50 + HE100 + HE150), nunca negativa. Dias sem marcações (Falta, Licença, DSR, COMP não trabalhado, Treinamento etc.) contam zero hora e a ocorrência fica registrada em Observações.'],
    ['S','3-B. REGRA DO CLIENTE — RÉPLICA DA PLANILHA "PONTO AJUSTADO" (cobrança validada com a VALE)'],
    ['P','Quando a regra ativa é "CLIENTE" (padrão), as horas são reclassificadas pelo mesmo racional da planilha manual validada (PONTO JULHO 21.06→20.07), confirmado linha a linha (HN, HE 100% e HE 150% batem 100%): (1) H trabalhada = última saída − primeira entrada − 1h de almoço, sendo o almoço descontado SOMENTE quando se trabalha após o horário de almoço (jornada > 6h ou saída ≥ 12h30) — meio-período de manhã não desconta almoço; (2) Dia útil: HN = mín(H, 9h de seg a qui / 8h na sexta); HE 50% = excedente de H sobre a jornada normal, com tolerância de 15 min (não conta até 15 min de extra); (3) Sábado = todas as horas em HE 100% (sem HN); (4) Domingo/feriado = todas as horas em HE 150% (sem HN); (5) Sáb/dom/feriado contam a partir de 06h45; (6) Adicional noturno 20% = horas antes das 06h (05h na sexta) e após 22h — obs.: na planilha do PQ o AD.N. não é apurado (fica zerado).'],
-   ['P','PREMISSA LIMITANTE — "DE ACORDO HE": sobre a HE 50% já apurada, o gestor zera manualmente os dias específicos de hora-extra que o cliente NÃO reconhece na cobrança (o "De Acordo" negociado). Na competência JULHO foram cortadas 131,6h de 412h apuradas (≈ 68% reconhecido), em 143 lançamentos de funções diversas. Esse corte NÃO é uma fórmula determinística: as HE zeradas (0,25h a 2,07h) se sobrepõem em magnitude às mantidas (0,63h a 1,65h), portanto dependem de decisão caso a caso na validação com o cliente. O sistema expõe o campo "HE50 reconhecida (%)" (he50Fator) para aplicar o percentual médio reconhecido e aproximar o total efetivamente pagável; por padrão apura a HE 50% integral (bruta, antes do De Acordo).'],
+   ['P','PREMISSA LIMITANTE — "DE ACORDO HE": o cliente só paga hora extra (HE 50%) previamente AUTORIZADA por email. Entrada antecipada (ex.: 06h30, 06h50) e saída além da jornada (ex.: 17h20/17h30 seg–qui, 16h20/16h30 sex) NÃO são remuneradas sem autorização. Por isso a HE 50% NÃO é uma dedução determinística: dias com o mesmo perfil de horário são pagos ou cortados apenas conforme exista, ou não, a autorização. Verificação em JULHO: os dias cortados (entrada média 06h52, saída 17h34) e os pagos (entrada 06h52, saída 17h48) têm perfil praticamente idêntico — logo o corte não vem do cartão de ponto, e sim da autorização.'],
+   ['P','TRATAMENTO NO SISTEMA (módulo "De Acordo HE"): a HE 50% é apurada INTEGRAL (coluna "HE 50% Apurada") mas entra como NÃO reconhecida (não paga) por padrão. Na aba Ponto, o registro por colaborador lista dia a dia toda HE 50% apurada; o gestor marca "Autorizar" (com a referência do email) nos dias validados e o sistema recalcula, integra e atualiza os totais, o dashboard e o Boletim de Medição. Ajustes parciais (reconhecer só parte das horas de um dia) também são suportados. O registro completo das horas não pagas está na aba "HE 50% Não Reconhecida" desta planilha.'],
    ['S','4. DE × PARA DE FUNÇÕES (QQP)'],
    ['P','O cargo do RH (ex.: PINTOR INDUSTRIAL I, PINTOR JATISTA) é convertido na Função Cobrada do contrato (ex.: Pintor Industrial) pela tabela De×Para (aba própria), editável no sistema. A consolidação QQP soma HN/HE/ADN de todos os colaboradores de cada função cobrada.'],
    ['S','5. VALOR R$ (BM)'],
@@ -6802,7 +6941,7 @@ function roboExportFormatado(){
    ['S','6. FÓRMULAS EMBUTIDAS NESTA PLANILHA'],
    ['P','Aba "QQP Consolidado": HN..AD.Not = SUMIFS sobre a aba Detalhe filtrando pela Função Cobrada (coluna J); Total = SUM(HN:HE150). Aba "Por Colaborador": Total Horas = SUM(HN:HE150). Alterando valores na aba Detalhe, os consolidados recalculam automaticamente no Excel.'],
    ['S','7. PREMISSAS E LIMITES'],
-   ['P','a) A coluna Conta/Valor do RH é considerada a verdade oficial das horas extras e adicional noturno; b) Adicional noturno "informativo" é somado em AD.Not; c) Descontos (atrasos, saídas antecipadas, ausências parciais) constam em Observações e já estão refletidos nas marcações; d) Colaboradores sem cadastro no Efetivos aparecem marcados "(sem cadastro)" e sem função cobrada até atualização do cadastro; e) Divergências devem ser tratadas atualizando o Efetivos ou o De×Para no sistema e reprocessando o PDF (idempotente por colaborador+referência); f) NA REGRA DO CLIENTE, a HE 50% apurada é BRUTA (integral); o corte "De Acordo HE" reconhecido pelo cliente é aplicado pelo campo "HE50 reconhecida (%)" — ver seção 3-B.'],
+   ['P','a) A coluna Conta/Valor do RH é considerada a verdade oficial das horas extras e adicional noturno; b) Adicional noturno "informativo" é somado em AD.Not; c) Descontos (atrasos, saídas antecipadas, ausências parciais) constam em Observações e já estão refletidos nas marcações; d) Colaboradores sem cadastro no Efetivos aparecem marcados "(sem cadastro)" e sem função cobrada até atualização do cadastro; e) Divergências devem ser tratadas atualizando o Efetivos ou o De×Para no sistema e reprocessando o PDF (idempotente por colaborador+referência); f) NA REGRA DO CLIENTE, a HE 50% apurada é BRUTA (integral) e só passa a ser paga quando autorizada, dia a dia, no módulo "De Acordo HE" (referência do email por lançamento) — ver seção 3-B e a aba "HE 50% Não Reconhecida".'],
    ['P',''],
    ['P','Documento gerado automaticamente pelo Sistema CBSI Gestão Operacional v15 · Robô de Ponto · '+new Date().toLocaleString('pt-BR')]
   ];
@@ -7539,7 +7678,7 @@ function renderRobo(){
   var host=document.getElementById('roboBox');
   if(!host){var pg=document.getElementById('p-ponto');if(!pg)return;host=document.createElement('div');host.id='roboBox';pg.appendChild(host)}
   var refs=roboRefs();
-  var FA=roboFiltroAtivo();
+  var FA=roboFiltroAtivo();window.FA=FA;
   var con=roboConsolidaRegs(FA.regs);
   var tot={hn:0,he50:0,he100:0,he150:0,adn:0};
   Object.values(con.porFunc).forEach(function(a){tot.hn+=a.hn;tot.he50+=a.he50;tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn});
@@ -7577,8 +7716,8 @@ function renderRobo(){
        +' · <span title="Ex.: medição fechada em 20/07 → competência JUL (apuração 21/06 a 20/07) → NF emitida em AGO. No filtro global, uma sequência de meses vale UMA competência, a do último mês: JUN+JUL = JUL · JUL+AGO = AGO · AGO+SET = SET. Nunca soma medições.">ℹ️ regra</span>'
        +' · Espelho de ponto: '+ROBO_PARAMS.pontoIni+'→'+ROBO_PARAMS.pontoFim+' (a apuração é por DATA do lançamento, então funciona mesmo cruzando dois espelhos)'
        +' · Cálculo de horas: <select onchange="roboSetRegra(this.value)" style="font-size:8px"><option value="cliente" '+(ROBO_PARAMS.calcRegra==='cliente'?'selected':'')+'>Regra CLIENTE (Ponto Ajustado — cobrança)</option><option value="rh" '+(ROBO_PARAMS.calcRegra==='rh'?'selected':'')+'>Conta oficial RH (espelho)</option></select>'
-       +' · HE50 reconhecida: <input type="number" min="0" max="100" value="'+(+ROBO_PARAMS.he50Fator||100)+'" onchange="roboSetParam(\'he50Fator\',this.value);roboRecalcular()" style="width:44px;font-size:9px;padding:2px" title="% da HE 50% apurada que o cliente reconhece na cobrança (De Acordo HE). 100 = integral.">%'
-       +' <span title="Regra CLIENTE (planilha validada): H = última saída − primeira entrada − 1h almoço (só quando a jornada passa de 6h ou cruza o almoço) · HN até 9h (sex 8h) · HE 50% só acima de 15 min de tolerância, contando a partir da jornada · sábado inteiro = HE 100% · domingo/feriado inteiro = HE 150% · fins de semana contam a partir de 06h45 · ADN até 06h (sex 05h) · HE50 sujeita aos De Acordo (campo %). Trocar a regra recalcula todos os lançamentos na hora.">ℹ️</span>'
+       +' · <b style="color:var(--ca)">HE 50% autorizada no módulo "De Acordo HE" abaixo</b>'
+       +' <span title="Regra CLIENTE (planilha validada): H = última saída − primeira entrada − 1h almoço (só quando a jornada passa de 6h ou cruza o almoço) · HN até 9h (sex 8h) · HE 50% só acima de 15 min de tolerância, contando a partir da jornada · sábado inteiro = HE 100% · domingo/feriado inteiro = HE 150% · fins de semana contam a partir de 06h45 · ADN até 06h (sex 05h). A HE 50% NÃO é paga sem autorização por email — use o módulo De Acordo HE para reconhecer dia a dia.">ℹ️</span>'
        +'</div>';
      var selHE=function(k){var v=ROBO_PARAMS[k];return '<select onchange="roboSetParamStr(\''+k+'\',this.value)" style="font-size:8px">'+['he50','he100','he150'].map(function(o){return '<option value="'+o+'" '+(v===o?'selected':'')+'>'+o.replace('he','HE ')+'%</option>'}).join('')+'</select>'};
      var nMan=0,arqsMan={};con.regs.forEach(function(l){if((l.obs||'').indexOf('PONTO MANUAL')===0){nMan++;arqsMan[l.arq]=1}});
@@ -7597,6 +7736,7 @@ function renderRobo(){
   +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')+kpi('HE 50%',h2hm(tot.he50),'var(--ca)')+kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
   +'</div>'
   +capacidadeHTML(FA,con)
+  +deAcordoHTML(FA)
   // barra de ações
   +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
   +'<span style="font-size:9px;font-weight:700;color:var(--dm)">APURAÇÃO:</span>'
@@ -7768,13 +7908,14 @@ try{
 }catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
 try{fixMetricasJornada()}catch(e){}
+try{aplicarDeAcordoHE()}catch(e){console.warn('DeAcordoHE init:',e)}
 try{renderRobo()}catch(e){console.warn('Robo init:',e)}
 try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
 // PROPAGAÇÃO AUTOMÁTICA DE REGRA: se a regra de cálculo mudou desde a última abertura
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
 try{
-  var calcAssin='planilha-v3|'+ROBO_PARAMS.calcRegra+'|'+(+ROBO_PARAMS.he50Fator||100);
+  var calcAssin='planilha-v4|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao;
   if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
     var rc=window.roboRecalcular(true);
     lss('cbsi-v15-robo-calcver',calcAssin);
