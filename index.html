@@ -5892,21 +5892,49 @@ if((+ROBO_PARAMS.paramsV||1)<4){ROBO_PARAMS.heAuthPadrao='nao';ROBO_PARAMS.he50F
 var HE_AUTH=lsg('cbsi-v15-robo-heauth',{});
 function heAuthSave(){lss('cbsi-v15-robo-heauth',HE_AUTH)}
 function heKey(l){return (l.mat||l.nome||l.id||'?')+'|'+(l.data||'')}
-// aplica a decisão de autorização sobre a HE 50% apurada de cada lançamento
-// (l.he50ap = apurada bruta, imutável · l.he50 = paga/reconhecida)
-function aplicarDeAcordoHE(){
+// EDIÇÕES MANUAIS DE PONTO (auditoria/enquadramento à validação do cliente) — store próprio,
+// sobrevive ao reprocessamento. PT_EDIT['MAT|DATA'] = {mk:'hh:mm|hh:mm'|null (marcações corrigidas),
+//   hn,he50,he100,he150,adn (override das horas MEDIDAS, cada um opcional), nota, quando, antes:{...}}
+var PT_EDIT=lsg('cbsi-v15-robo-ptedit',{});
+function ptEditSave(){lss('cbsi-v15-robo-ptedit',PT_EDIT)}
+// aplica AUTORIZAÇÃO (HE50) + EDIÇÕES MANUAIS sobre cada lançamento
+// Convenção: *Ap = APURADO (real, do ponto) · hn/he50/he100/he150/adn = MEDIDO (o que vai ao cliente)
+function aplicarAjustes(){
   var padraoSim=(ROBO_PARAMS.heAuthPadrao==='sim');
   (ROBO_LANC||[]).forEach(function(l){
-    if(l.he50ap==null)l.he50ap=+l.he50||0;   // 1ª vez: snapshot da apurada
-    var ap=+l.he50ap||0;
-    if(ap<=0.001){l.he50=0;return}
-    var a=HE_AUTH[heKey(l)];
+    // snapshot do apurado (1ª vez) — HN/HE100/HE150/ADN nunca eram cortados, então o valor atual é o apurado
+    if(l.he50ap==null)l.he50ap=+l.he50||0;
+    if(l.hnAp==null)l.hnAp=+l.hn||0;
+    if(l.he100ap==null)l.he100ap=+l.he100||0;
+    if(l.he150ap==null)l.he150ap=+l.he150||0;
+    if(l.adnAp==null)l.adnAp=+l.adn||0;
+    if(l.trabAp==null)l.trabAp=+l.trab||0;
+    var key=heKey(l),e=PT_EDIT[key];
+    // 1) EDIÇÃO DE MARCAÇÕES → recalcula o apurado do dia pela regra
+    l.mkEd=null;
+    if(e&&e.mk!=null&&e.mk!==''){
+      var marcas=String(e.mk).split('|').filter(Boolean);
+      if(marcas.length>=2){
+        var c=calcDiaCliente(marcas,l.dow,l.data);
+        l.hnAp=c.hn;l.he50ap=c.he50;l.he100ap=c.he100;l.he150ap=c.he150;l.adnAp=c.adn;l.trabAp=c.trab;l.mkEd=e.mk;
+      }
+    }
+    // 2) MEDIDO = apurado, com HE50 sujeita ao De Acordo, e overrides de horas por cima
+    var a=HE_AUTH[key];
     var rec=(a&&a.rec!=null)?!!a.rec:padraoSim;
-    if(rec)l.he50=(a&&a.h!=null&&a.h!=='')?Math.min(ap,Math.max(0,+a.h||0)):ap;
-    else l.he50=0;
-    l.he50=Math.round(l.he50*100)/100;
+    var he50med=rec?((a&&a.h!=null&&a.h!=='')?Math.min(l.he50ap,Math.max(0,+a.h||0)):l.he50ap):0;
+    l.hn  =(e&&e.hn!=null&&e.hn!=='')  ? +e.hn  : l.hnAp;
+    l.he50=(e&&e.he50!=null&&e.he50!=='')? +e.he50: he50med;
+    l.he100=(e&&e.he100!=null&&e.he100!=='')?+e.he100:l.he100ap;
+    l.he150=(e&&e.he150!=null&&e.he150!=='')?+e.he150:l.he150ap;
+    l.adn =(e&&e.adn!=null&&e.adn!=='') ? +e.adn : l.adnAp;
+    l.trab=l.trabAp;
+    ['hn','he50','he100','he150','adn'].forEach(function(k){l[k]=Math.round((+l[k]||0)*100)/100});
+    l.editado=!!(e&&(e.mk!=null||e.hn!=null||e.he50!=null||e.he100!=null||e.he150!=null||e.adn!=null));
   });
 }
+// alias (compatibilidade com chamadas existentes)
+function aplicarDeAcordoHE(){aplicarAjustes()}
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -6366,7 +6394,7 @@ window.roboRecalcular=function(silencioso){
   });
   aplicarDeAcordoHE();   // aplica autorização (HE 50% não paga sem De Acordo)
   roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v4|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v5|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -6397,7 +6425,7 @@ window.heAuthParcial=function(key,h){
 window.heAuthSetPadrao=function(v){
   ROBO_PARAMS.heAuthPadrao=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
   aplicarDeAcordoHE();roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v4|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v5|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
   renderRobo();
 };
 // AÇÃO EM LOTE: reconhece / não reconhece todos os lançamentos com HE 50% do período em tela
@@ -6417,6 +6445,37 @@ window.heAuthAplicar=function(){
   var apu=0,rec=0;(window.FA&&window.FA.regs?window.FA.regs:ROBO_LANC).forEach(function(l){apu+=(+l.he50ap||0);rec+=(+l.he50||0)});
   rtoast('✔ De Acordo HE aplicado: HE 50% apurada '+apu.toFixed(1)+'h → reconhecida '+rec.toFixed(1)+'h (não reconhecida '+(apu-rec).toFixed(1)+'h). Use "Aplicar no BM" para levar ao Boletim.');
 };
+
+// ---- AUDITORIA & EDIÇÃO DE PONTO DIÁRIO ----
+var PT_SEL='',PT_FILTER='';
+window.ptFiltro=function(v){PT_FILTER=v||'';var t=document.getElementById('ptAudBox');if(t){t.innerHTML=auditoriaInner(window.FA||roboFiltroAtivo())}};
+window.ptSel=function(id){PT_SEL=(PT_SEL===id?'':id);var t=document.getElementById('ptAudBox');if(t){t.innerHTML=auditoriaInner(window.FA||roboFiltroAtivo())}};
+// edição das HORAS medidas de um dia (tipo = hn|he50|he100|he150|adn)
+window.ptEditHora=function(key,tipo,valor,nota){
+  PT_EDIT[key]=PT_EDIT[key]||{};
+  var l=(ROBO_LANC||[]).find(function(x){return heKey(x)===key});
+  if(!PT_EDIT[key].antes)PT_EDIT[key].antes={hn:l?l.hnAp:null,he50:l?l.he50ap:null,he100:l?l.he100ap:null,he150:l?l.he150ap:null,adn:l?l.adnAp:null};
+  PT_EDIT[key][tipo]=(valor===''||valor==null)?null:(+valor);
+  if(nota!=null&&nota!=='')PT_EDIT[key].nota=nota;
+  PT_EDIT[key].quando=fmtHoje();
+  limparEditVazio(key);ptEditSave();aplicarAjustes();roboSave();renderRobo();
+};
+// edição das MARCAÇÕES (entrada/saída) de um dia
+window.ptEditMarc=function(key,mk,nota){
+  PT_EDIT[key]=PT_EDIT[key]||{};
+  PT_EDIT[key].mk=(mk==null||mk==='')?null:mk;
+  if(nota!=null&&nota!=='')PT_EDIT[key].nota=nota;
+  PT_EDIT[key].quando=fmtHoje();
+  limparEditVazio(key);ptEditSave();aplicarAjustes();roboSave();renderRobo();
+};
+window.ptEditNota=function(key,nota){PT_EDIT[key]=PT_EDIT[key]||{};PT_EDIT[key].nota=nota;limparEditVazio(key);ptEditSave()};
+window.ptEditLimpar=function(key){delete PT_EDIT[key];ptEditSave();aplicarAjustes();roboSave();renderRobo();rtoast('↩ Edição removida — dia voltou ao apurado do ponto.')};
+function limparEditVazio(key){ // remove a entrada se ficou sem nenhum override
+  var e=PT_EDIT[key];if(!e)return;
+  var temOverride=['mk','hn','he50','he100','he150','adn'].some(function(k){return e[k]!=null&&e[k]!==''});
+  if(!temOverride)delete PT_EDIT[key];
+}
+function fmtHoje(){try{return (new Date(new Date().toDateString())).toLocaleDateString('pt-BR')}catch(e){return ''}}
 
 // processa PDFs do espelho → lançamentos
 function roboProcessarPdf(file,statusEl){
@@ -6586,8 +6645,9 @@ function roboConsolidaRegs(regs){
     var f=l.funcQQP||('(sem De×Para: '+l.cargo+')');
     var a=porFunc[f]=porFunc[f]||{hn:0,he50:0,he100:0,he150:0,adn:0,colabs:{}};
     a.hn+=l.hn;a.he50+=l.he50;a.he100+=l.he100;a.he150+=l.he150;a.adn+=l.adn;a.colabs[l.id]=1;
-    var c=porColab[l.id]=porColab[l.id]||{id:l.id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,hn:0,he50:0,he100:0,he150:0,adn:0,dias:0};
+    var c=porColab[l.id]=porColab[l.id]||{id:l.id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,hn:0,he50:0,he100:0,he150:0,adn:0,dias:0,real:0,med:0,edit:0};
     c.hn+=l.hn;c.he50+=l.he50;c.he100+=l.he100;c.he150+=l.he150;c.adn+=l.adn;if(l.trab>0)c.dias++;
+    c.real+=(+l.trabAp||0);c.med+=(+l.hn||0)+(+l.he50||0)+(+l.he100||0)+(+l.he150||0);if(l.editado)c.edit++;
   });
   return{porFunc:porFunc,porColab:porColab,regs:regs||[]};
 }
@@ -6638,6 +6698,90 @@ function deAcordoHTML(FA){
     });
   });
   h+='</table></div></details></div>';
+  return h;
+}
+// AUDITORIA & EDIÇÃO DE PONTO DIÁRIO — totalizador real×medido + edição por colaborador/dia
+window.ajustesAplicar=function(){
+  aplicarAjustes();roboSave();
+  try{if(typeof buildDash==='function')buildDash()}catch(e){}
+  try{if(typeof renderPonto==='function')renderPonto();else renderRobo()}catch(e){renderRobo()}
+  var real=0,med=0;(window.FA&&window.FA.regs?window.FA.regs:ROBO_LANC).forEach(function(l){real+=(+l.trabAp||0);med+=(+l.hn||0)+(+l.he50||0)+(+l.he100||0)+(+l.he150||0)});
+  rtoast('↻ Relatório atualizado: horas reais '+real.toFixed(1)+'h · horas a medir '+med.toFixed(1)+'h · diferença '+(real-med).toFixed(1)+'h.');
+};
+function auditoriaHTML(FA){
+  return '<div style="border:1px solid var(--bd);border-radius:8px;padding:8px;margin-bottom:8px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">'
+    +'<div style="font-size:11px;font-weight:800;color:var(--ca)">🔍 AUDITORIA &amp; EDIÇÃO DE PONTO DIÁRIO <span style="font-weight:400;color:var(--dm)">(horas reais × horas a medir · ajuste dia a dia com justificativa)</span></div>'
+    +'<button onclick="ajustesAplicar()" style="font-size:9px;font-weight:700;padding:4px 8px;background:var(--ca);color:#fff;border:none;border-radius:5px;cursor:pointer">↻ Atualizar relatório</button>'
+    +'</div>'
+    +'<input id="ptFiltroInp" value="'+String(PT_FILTER).replace(/"/g,'&quot;')+'" oninput="ptFiltro(this.value)" placeholder="🔎 filtrar colaborador por nome ou matrícula…" style="width:100%;max-width:360px;font-size:10px;padding:5px;margin-bottom:6px;border:1px solid var(--bd);border-radius:5px">'
+    +'<div id="ptAudBox">'+auditoriaInner(FA)+'</div>'
+    +'</div>';
+}
+function auditoriaInner(FA){
+  var regs=(FA&&FA.regs)?FA.regs:[];
+  // agrega por colaborador
+  var byC={};
+  regs.forEach(function(l){
+    var id=l.id||l.mat||l.nome;var k=id||'?';
+    var c=byC[k]=byC[k]||{id:id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,real:0,med:0,dias:0,edit:0,regs:[]};
+    c.real+=(+l.trabAp||0);c.med+=(+l.hn||0)+(+l.he50||0)+(+l.he100||0)+(+l.he150||0);
+    if((+l.trab||0)>0||(+l.he150||0)>0||(+l.he100||0)>0)c.dias++;
+    if(l.editado)c.edit++;
+    c.regs.push(l);
+  });
+  var f=(PT_FILTER||'').toLowerCase().trim();
+  var lista=Object.values(byC).filter(function(c){return !f||((c.nome||'').toLowerCase().indexOf(f)>=0)||((c.mat||'').toLowerCase().indexOf(f)>=0)}).sort(function(a,b){return (a.nome||'')<(b.nome||'')?-1:1});
+  var tReal=0,tMed=0;lista.forEach(function(c){tReal+=c.real;tMed+=c.med});
+  var h='<div style="font-size:9px;color:var(--dm);margin-bottom:4px">'+lista.length+' colaborador(es) · <b>horas reais (entrada/saída): '+h2hm(tReal)+'</b> · <b style="color:var(--gn)">horas a medir c/ cliente: '+h2hm(tMed)+'</b> · <b style="color:var(--rd)">diferença: '+h2hm(tReal-tMed)+'</b></div>';
+  h+='<div style="max-height:240px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th>Dias</th><th>H. Reais</th><th>H. a Medir</th><th>Dif.</th><th>Ed.</th><th></th></tr>';
+  lista.forEach(function(c){
+    var dif=c.real-c.med,sel=(PT_SEL===c.id);
+    h+='<tr style="border-bottom:1px solid var(--bd);'+(sel?'background:rgba(0,173,249,.10)':'')+'">'
+      +'<td style="padding:3px;text-align:left" title="'+(c.cargo||'')+' → '+(c.funcQQP||'')+'">'+(c.nome||'—')+'</td>'
+      +'<td style="text-align:left">'+(c.mat||c.id||'')+'</td>'
+      +'<td style="text-align:center">'+c.dias+'</td>'
+      +'<td style="text-align:right">'+h2hm(c.real)+'</td>'
+      +'<td style="text-align:right;color:var(--gn);font-weight:700">'+h2hm(c.med)+'</td>'
+      +'<td style="text-align:right;color:'+(Math.abs(dif)>0.02?'var(--rd)':'var(--dm)')+'">'+h2hm(dif)+'</td>'
+      +'<td style="text-align:center">'+(c.edit?('<span style="color:var(--co);font-weight:700" title="'+c.edit+' dia(s) editado(s)">✎'+c.edit+'</span>'):'')+'</td>'
+      +'<td style="text-align:center"><button onclick="ptSel(\''+String(c.id).replace(/'/g,"\\'")+'\')" style="font-size:8px;padding:2px 6px;border:1px solid var(--bd);border-radius:4px;background:transparent;cursor:pointer;color:var(--ca)">'+(sel?'fechar':'editar')+'</button></td>'
+      +'</tr>';
+    if(sel)h+='<tr><td colspan="8" style="padding:0">'+detalheDiario(c)+'</td></tr>';
+  });
+  h+='</table></div>';
+  return h;
+}
+function detalheDiario(c){
+  var arr=c.regs.slice().sort(function(a,b){return dataBR(a.data)-dataBR(b.data)});
+  var h='<div style="background:rgba(120,120,120,.06);padding:6px;border-radius:6px;margin:2px 0">'
+    +'<div style="font-size:8px;color:var(--dm);margin-bottom:3px">Edite as <b>marcações</b> (entrada/saída, formato hh:mm|hh:mm) ou as <b>horas medidas</b> por tipo. Deixe em branco para manter o apurado. Toda edição pede justificativa. Apurado (real) fica no título de cada campo.</div>'
+    +'<div style="overflow:auto"><table style="width:100%;font-size:8px;border-collapse:collapse">'
+    +'<tr style="background:var(--c1)"><th style="padding:2px;text-align:left">Data</th><th>Dia</th><th>Marcações (entrada/saída)</th><th>Trab</th><th title="apurado→medido">HN</th><th>HE50</th><th>HE100</th><th>HE150</th><th>ADN</th><th style="text-align:left">Justificativa</th><th></th></tr>';
+  arr.forEach(function(l){
+    var key=heKey(l),e=PT_EDIT[key]||{};
+    var mkVal=(e.mk!=null?e.mk:(l.mk||''));
+    function inp(tipo,ap,med){
+      var ov=(e[tipo]!=null&&e[tipo]!=='');
+      return '<input type="number" step="0.01" min="0" value="'+(ov?e[tipo]:'')+'" placeholder="'+n2(ap)+'" title="apurado '+n2(ap)+' · medido '+n2(med)+'" onchange="ptEditHora(\''+key+'\',\''+tipo+'\',this.value,(document.getElementById(\'nt_'+key.replace(/[^A-Za-z0-9]/g,'_')+'\')||{}).value)" style="width:40px;font-size:8px;padding:1px;'+(ov?'background:#fff6e0;border:1px solid var(--co)':'')+'">';
+    }
+    var ntId='nt_'+key.replace(/[^A-Za-z0-9]/g,'_');
+    h+='<tr style="border-bottom:1px solid var(--bd)">'
+      +'<td style="padding:2px;text-align:left">'+l.data+(l.editado?' <span style="color:var(--co)" title="dia editado">✎</span>':'')+'</td>'
+      +'<td style="text-align:center">'+(l.dow||'')+'</td>'
+      +'<td><input type="text" value="'+String(mkVal).replace(/"/g,'&quot;')+'" onchange="ptEditMarc(\''+key+'\',this.value,(document.getElementById(\''+ntId+'\')||{}).value)" placeholder="sem marcação" style="width:130px;font-size:8px;padding:1px;'+(e.mk!=null?'background:#fff6e0;border:1px solid var(--co)':'')+'"></td>'
+      +'<td style="text-align:right;color:var(--dm)">'+n2(+l.trabAp||0)+'</td>'
+      +'<td style="text-align:center">'+inp('hn',+l.hnAp||0,+l.hn||0)+'</td>'
+      +'<td style="text-align:center">'+inp('he50',+l.he50ap||0,+l.he50||0)+'</td>'
+      +'<td style="text-align:center">'+inp('he100',+l.he100ap||0,+l.he100||0)+'</td>'
+      +'<td style="text-align:center">'+inp('he150',+l.he150ap||0,+l.he150||0)+'</td>'
+      +'<td style="text-align:center">'+inp('adn',+l.adnAp||0,+l.adn||0)+'</td>'
+      +'<td style="text-align:left"><input id="'+ntId+'" type="text" value="'+String(e.nota||'').replace(/"/g,'&quot;')+'" onchange="ptEditNota(\''+key+'\',this.value)" placeholder="validação do cliente" style="width:120px;font-size:8px;padding:1px"></td>'
+      +'<td style="text-align:center">'+(l.editado?('<button onclick="ptEditLimpar(\''+key+'\')" title="reverter ao apurado" style="font-size:8px;padding:1px 4px;border:1px solid var(--rd);color:var(--rd);border-radius:3px;background:transparent;cursor:pointer">↩</button>'):'')+'</td>'
+      +'</tr>';
+  });
+  h+='</table></div></div>';
   return h;
 }
 window.roboSetModo=function(v){ROBO_UI.modo=v;roboUISave();renderRobo()};
@@ -6768,8 +6912,9 @@ function roboConsolida(ref){
     var f=l.funcQQP||('(sem De×Para: '+l.cargo+')');
     var a=porFunc[f]=porFunc[f]||{hn:0,he50:0,he100:0,he150:0,adn:0,colabs:{}};
     a.hn+=l.hn;a.he50+=l.he50;a.he100+=l.he100;a.he150+=l.he150;a.adn+=l.adn;a.colabs[l.id]=1;
-    var c=porColab[l.id]=porColab[l.id]||{id:l.id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,hn:0,he50:0,he100:0,he150:0,adn:0,dias:0};
+    var c=porColab[l.id]=porColab[l.id]||{id:l.id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,hn:0,he50:0,he100:0,he150:0,adn:0,dias:0,real:0,med:0,edit:0};
     c.hn+=l.hn;c.he50+=l.he50;c.he100+=l.he100;c.he150+=l.he150;c.adn+=l.adn;if(l.trab>0)c.dias++;
+    c.real+=(+l.trabAp||0);c.med+=(+l.hn||0)+(+l.he50||0)+(+l.he100||0)+(+l.he150||0);if(l.editado)c.edit++;
   });
   return{porFunc:porFunc,porColab:porColab,regs:fil};
 }
@@ -6869,16 +7014,35 @@ function roboExportFormatado(){
       if(cn>=11&&cn<=16){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}});
   });
   wd.autoFilter={from:'A1',to:'R1'};
-  // ===== ABA POR COLABORADOR =====
+  // ===== ABA PONTO DIÁRIO INDIVIDUAL (auditável — apurado × medido, dia a dia) =====
+  var wpi=wb.addWorksheet('Ponto Diário Individual',{views:[{state:'frozen',ySplit:1}]});
+  wpi.columns=[{header:'Matrícula',width:11},{header:'Nome',width:30},{header:'Função Cobrada',width:22},{header:'Data',width:10},{header:'Dia',width:6},{header:'Entrada',width:9},{header:'Saída',width:9},{header:'H.Trab (real)',width:12},
+    {header:'HN apur.',width:9},{header:'HN medido',width:10},{header:'HE50 apur.',width:10},{header:'HE50 medido',width:11},{header:'HE100 apur.',width:11},{header:'HE100 medido',width:12},{header:'HE150 apur.',width:11},{header:'HE150 medido',width:12},{header:'ADN apur.',width:9},{header:'ADN medido',width:10},{header:'Editado?',width:9},{header:'Justificativa',width:28}];
+  xHead(wpi.getRow(1),XC.navy);
+  con.regs.slice().sort(function(a,b){return (a.nome+a.data)<(b.nome+b.data)?-1:1}).forEach(function(l,ix){
+    var mk=(l.mkEd||l.mk||'').split('|').filter(Boolean),ent=mk[0]||'',sai=mk[mk.length-1]||'';
+    var e=(typeof PT_EDIT!=='undefined'&&PT_EDIT[heKey(l)])||{};
+    var editado=l.editado?'SIM':'';
+    var row=wpi.addRow([l.mat,l.nome,l.funcQQP,l.data,l.dow,ent,sai,r2(+l.trabAp||0),
+      r2(+l.hnAp||0),r2(+l.hn||0),r2(+l.he50ap||0),r2(+l.he50||0),r2(+l.he100ap||0),r2(+l.he100||0),r2(+l.he150ap||0),r2(+l.he150||0),r2(+l.adnAp||0),r2(+l.adn||0),editado,e.nota||'']);
+    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);
+      if(cn>=8&&cn<=18){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}
+      if(cn===19&&editado){cell.font={size:9,bold:true,color:{argb:XC.orange}}}});
+  });
+  wpi.autoFilter={from:'A1',to:'T1'};
+  // ===== ABA POR COLABORADOR (horas reais × horas a medir) =====
   var wc=wb.addWorksheet('Por Colaborador',{views:[{state:'frozen',ySplit:1}]});
-  wc.columns=[{header:'ID',width:10},{header:'Matrícula',width:10},{header:'Nome',width:32},{header:'Função CBSI',width:24},{header:'Função Cobrada',width:24},{header:'Dias Trab',width:9},{header:'HN',width:9},{header:'HE 50%',width:9},{header:'HE 100%',width:9},{header:'HE 150%',width:9},{header:'AD.Not',width:9},{header:'Total Horas',width:11}];
+  wc.columns=[{header:'ID',width:10},{header:'Matrícula',width:10},{header:'Nome',width:32},{header:'Função CBSI',width:24},{header:'Função Cobrada',width:24},{header:'Dias Trab',width:9},{header:'HN',width:9},{header:'HE 50%',width:9},{header:'HE 100%',width:9},{header:'HE 150%',width:9},{header:'AD.Not',width:9},{header:'Total Medido',width:11},{header:'Horas Reais',width:11},{header:'Diferença',width:11},{header:'Dias Editados',width:11}];
   xHead(wc.getRow(1),XC.blue);
   Object.values(con.porColab).sort(function(a,b){return a.nome<b.nome?-1:1}).forEach(function(c,ix){
-    var row=wc.addRow([c.id,c.mat,c.nome,c.cargo,c.funcQQP,c.dias,r2(c.hn),r2(c.he50),r2(c.he100),r2(c.he150),r2(c.adn),null]);
-    row.getCell(12).value={formula:'SUM(G'+row.number+':J'+row.number+')'};
-    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);if(cn>=7)cell.numFmt='#,##0.00'});
+    var row=wc.addRow([c.id,c.mat,c.nome,c.cargo,c.funcQQP,c.dias,r2(c.hn),r2(c.he50),r2(c.he100),r2(c.he150),r2(c.adn),null,r2(c.real||0),null,c.edit||0]);
+    var rn=row.number;
+    row.getCell(12).value={formula:'SUM(G'+rn+':J'+rn+')'};
+    row.getCell(14).value={formula:'M'+rn+'-L'+rn};
+    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);if(cn>=7&&cn<=14)cell.numFmt='#,##0.00';
+      if(cn===14){cell.font={size:9,color:{argb:XC.grayTx}}}});
   });
-  wc.autoFilter={from:'A1',to:'L1'};
+  wc.autoFilter={from:'A1',to:'O1'};
   // ===== ABA QQP CONSOLIDADO (com fórmulas) =====
   var wq=wb.addWorksheet('QQP Consolidado',{views:[{state:'frozen',ySplit:1}]});
   wq.columns=[{header:'Função Cobrada (QQP)',width:30},{header:'Colab.',width:8},{header:'HN',width:11},{header:'HE 50%',width:11},{header:'HE 100%',width:11},{header:'HE 150%',width:11},{header:'AD.Not',width:11},{header:'Total Horas',width:12},{header:'Valor R$ (BM)',width:15}];
@@ -6934,6 +7098,7 @@ function roboExportFormatado(){
    ['P','Quando a regra ativa é "CLIENTE" (padrão), as horas são reclassificadas pelo mesmo racional da planilha manual validada (PONTO JULHO 21.06→20.07), confirmado linha a linha (HN, HE 100% e HE 150% batem 100%): (1) H trabalhada = última saída − primeira entrada − 1h de almoço, sendo o almoço descontado SOMENTE quando se trabalha após o horário de almoço (jornada > 6h ou saída ≥ 12h30) — meio-período de manhã não desconta almoço; (2) Dia útil: HN = mín(H, 9h de seg a qui / 8h na sexta); HE 50% = excedente de H sobre a jornada normal, com tolerância de 15 min (não conta até 15 min de extra); (3) Sábado = todas as horas em HE 100% (sem HN); (4) Domingo/feriado = todas as horas em HE 150% (sem HN); (5) Sáb/dom/feriado contam a partir de 06h45; (6) Adicional noturno 20% = horas antes das 06h (05h na sexta) e após 22h — obs.: na planilha do PQ o AD.N. não é apurado (fica zerado).'],
    ['P','PREMISSA LIMITANTE — "DE ACORDO HE": o cliente só paga hora extra (HE 50%) previamente AUTORIZADA por email. Entrada antecipada (ex.: 06h30, 06h50) e saída além da jornada (ex.: 17h20/17h30 seg–qui, 16h20/16h30 sex) NÃO são remuneradas sem autorização. Por isso a HE 50% NÃO é uma dedução determinística: dias com o mesmo perfil de horário são pagos ou cortados apenas conforme exista, ou não, a autorização. Verificação em JULHO: os dias cortados (entrada média 06h52, saída 17h34) e os pagos (entrada 06h52, saída 17h48) têm perfil praticamente idêntico — logo o corte não vem do cartão de ponto, e sim da autorização.'],
    ['P','TRATAMENTO NO SISTEMA (módulo "De Acordo HE"): a HE 50% é apurada INTEGRAL (coluna "HE 50% Apurada") mas entra como NÃO reconhecida (não paga) por padrão. Na aba Ponto, o registro por colaborador lista dia a dia toda HE 50% apurada; o gestor marca "Autorizar" (com a referência do email) nos dias validados e o sistema recalcula, integra e atualiza os totais, o dashboard e o Boletim de Medição. Ajustes parciais (reconhecer só parte das horas de um dia) também são suportados. O registro completo das horas não pagas está na aba "HE 50% Não Reconhecida" desta planilha.'],
+   ['P','AUDITORIA E EDIÇÃO DE PONTO DIÁRIO: além da autorização de HE, o sistema permite editar, dia a dia e por colaborador, tanto as MARCAÇÕES (entrada/saída — o sistema recalcula as horas pela regra) quanto diretamente as HORAS MEDIDAS por tipo (HN, HE50, HE100, HE150, ADN), para enquadrar particularidades validadas com o cliente. Cada edição guarda o valor anterior, o novo e a justificativa/referência, e pode ser revertida ao apurado do ponto. A aba "Ponto Diário Individual" traz, com filtros, cada dia de cada colaborador comparando APURADO (real, do cartão) × MEDIDO (o que vai ao cliente); a aba "Por Colaborador" totaliza Horas Reais × Horas a Medir × Diferença por pessoa.'],
    ['S','4. DE × PARA DE FUNÇÕES (QQP)'],
    ['P','O cargo do RH (ex.: PINTOR INDUSTRIAL I, PINTOR JATISTA) é convertido na Função Cobrada do contrato (ex.: Pintor Industrial) pela tabela De×Para (aba própria), editável no sistema. A consolidação QQP soma HN/HE/ADN de todos os colaboradores de cada função cobrada.'],
    ['S','5. VALOR R$ (BM)'],
@@ -7737,6 +7902,7 @@ function renderRobo(){
   +'</div>'
   +capacidadeHTML(FA,con)
   +deAcordoHTML(FA)
+  +auditoriaHTML(FA)
   // barra de ações
   +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
   +'<span style="font-size:9px;font-weight:700;color:var(--dm)">APURAÇÃO:</span>'
@@ -7915,7 +8081,7 @@ try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
 try{
-  var calcAssin='planilha-v4|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao;
+  var calcAssin='planilha-v5|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao;
   if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
     var rc=window.roboRecalcular(true);
     lss('cbsi-v15-robo-calcver',calcAssin);
@@ -7933,7 +8099,8 @@ try{
 }catch(e){console.warn('calcver:',e)}
 try{renderAndaimes()}catch(e){console.warn('Andaimes init:',e)}
 // gancho de diagnóstico (usado nos testes automatizados)
-window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,calcDiaCliente:calcDiaCliente,ensurePdfJs:ensurePdfJs};
+window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,calcDiaCliente:calcDiaCliente,ensurePdfJs:ensurePdfJs,
+  lancCount:function(){return ROBO_LANC.length},filtro:function(){var f=roboFiltroAtivo();return{n:f.regs.length,rotulo:f.rotulo,modo:f.modo}},ptedit:function(){return PT_EDIT},heauth:function(){return HE_AUTH}};
 console.log('🤖 Robô de Ponto + Andaimes carregados (add-on v16)');
 })();
 
