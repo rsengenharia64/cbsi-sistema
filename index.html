@@ -5929,7 +5929,7 @@ function aplicarAjustes(){
     l.he150=(e&&e.he150!=null&&e.he150!=='')?+e.he150:l.he150ap;
     l.adn =(e&&e.adn!=null&&e.adn!=='') ? +e.adn : l.adnAp;
     l.trab=l.trabAp;
-    ['hn','he50','he100','he150','adn'].forEach(function(k){l[k]=Math.round((+l[k]||0)*100)/100});
+    ['hn','he50','he100','he150','adn'].forEach(function(k){l[k]=Math.round((+l[k]||0)*1000)/1000});
     l.editado=!!(e&&(e.mk!=null||e.hn!=null||e.he50!=null||e.he100!=null||e.he150!=null||e.adn!=null));
   });
 }
@@ -5943,7 +5943,7 @@ function lsg(k,def){try{var v=JSON.parse(localStorage.getItem(k));return v==null
 function lss(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){console.warn('LS cheio:',k)}}
 function hm2h(s){if(!s)return 0;var p=s.split(':');return (+p[0])+(+p[1])/60}
 function h2hm(h){if(!h&&h!==0)return'';var neg=h<0;h=Math.abs(h);var hh=Math.floor(h),mm=Math.round((h-hh)*60);if(mm===60){hh++;mm=0}return(neg?'-':'')+String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')}
-function n2(x){return (Math.round(x*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function n2(x){return (Math.round(x*1000)/1000).toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})}
 function normTxt(s){return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim()}
 function rtoast(m){try{toast(m)}catch(e){console.log(m)}}
 function rlog(mod,ac,det){try{logAudit(mod,ac,det)}catch(e){}}
@@ -6183,7 +6183,7 @@ function calcDia(dia){
   r.hn=Math.max(0,r.trab-(r.he50+r.he100+r.he150));
   // dia inteiro de falta/licença sem marcações → tudo zero
   if(!dia.marcas.length){r.hn=0;r.trab=0}
-  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*100)/100});
+  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*1000)/1000});
   return r;
 }
 
@@ -6260,7 +6260,7 @@ function calcManualDia(dia){
       if(extra>0)r[P.manualHeUtil||'he50']+=extra;
     }
   }
-  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*100)/100});
+  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*1000)/1000});
   return r;
 }
 function efetByNome(nome){
@@ -6368,7 +6368,7 @@ function calcDiaCliente(marcas,dow,dataStr){
       if(fat<1)r.he50=r.he50*fat;
     }
   }
-  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*100)/100});
+  ['hn','he50','he100','he150','adn','trab'].forEach(function(k){r[k]=Math.round(r[k]*1000)/1000});
   return r;
 }
 // recalcula TODOS os lançamentos com a regra atual (as marcações ficam guardadas em l.mk)
@@ -6394,7 +6394,7 @@ window.roboRecalcular=function(silencioso){
   });
   aplicarDeAcordoHE();   // aplica autorização (HE 50% não paga sem De Acordo)
   roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v5|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v6|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -6425,7 +6425,7 @@ window.heAuthParcial=function(key,h){
 window.heAuthSetPadrao=function(v){
   ROBO_PARAMS.heAuthPadrao=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
   aplicarDeAcordoHE();roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v5|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v6|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
   renderRobo();
 };
 // AÇÃO EM LOTE: reconhece / não reconhece todos os lançamentos com HE 50% do período em tela
@@ -6643,8 +6643,8 @@ function roboConsolidaRegs(regs){
   var porFunc={},porColab={};
   (regs||[]).forEach(function(l){
     var f=l.funcQQP||('(sem De×Para: '+l.cargo+')');
-    var a=porFunc[f]=porFunc[f]||{hn:0,he50:0,he100:0,he150:0,adn:0,colabs:{}};
-    a.hn+=l.hn;a.he50+=l.he50;a.he100+=l.he100;a.he150+=l.he150;a.adn+=l.adn;a.colabs[l.id]=1;
+    var a=porFunc[f]=porFunc[f]||{hn:0,he50:0,he50ap:0,he100:0,he150:0,adn:0,colabs:{}};
+    a.hn+=l.hn;a.he50+=l.he50;a.he50ap+=(+l.he50ap||0);a.he100+=l.he100;a.he150+=l.he150;a.adn+=l.adn;a.colabs[l.id]=1;
     var c=porColab[l.id]=porColab[l.id]||{id:l.id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,hn:0,he50:0,he100:0,he150:0,adn:0,dias:0,real:0,med:0,edit:0};
     c.hn+=l.hn;c.he50+=l.he50;c.he100+=l.he100;c.he150+=l.he150;c.adn+=l.adn;if(l.trab>0)c.dias++;
     c.real+=(+l.trabAp||0);c.med+=(+l.hn||0)+(+l.he50||0)+(+l.he100||0)+(+l.he150||0);if(l.editado)c.edit++;
@@ -6910,8 +6910,8 @@ function roboConsolida(ref){
   var porFunc={},porColab={};
   fil.forEach(function(l){
     var f=l.funcQQP||('(sem De×Para: '+l.cargo+')');
-    var a=porFunc[f]=porFunc[f]||{hn:0,he50:0,he100:0,he150:0,adn:0,colabs:{}};
-    a.hn+=l.hn;a.he50+=l.he50;a.he100+=l.he100;a.he150+=l.he150;a.adn+=l.adn;a.colabs[l.id]=1;
+    var a=porFunc[f]=porFunc[f]||{hn:0,he50:0,he50ap:0,he100:0,he150:0,adn:0,colabs:{}};
+    a.hn+=l.hn;a.he50+=l.he50;a.he50ap+=(+l.he50ap||0);a.he100+=l.he100;a.he150+=l.he150;a.adn+=l.adn;a.colabs[l.id]=1;
     var c=porColab[l.id]=porColab[l.id]||{id:l.id,mat:l.mat,nome:l.nome,cargo:l.cargo,funcQQP:l.funcQQP,hn:0,he50:0,he100:0,he150:0,adn:0,dias:0,real:0,med:0,edit:0};
     c.hn+=l.hn;c.he50+=l.he50;c.he100+=l.he100;c.he150+=l.he150;c.adn+=l.adn;if(l.trab>0)c.dias++;
     c.real+=(+l.trabAp||0);c.med+=(+l.hn||0)+(+l.he50||0)+(+l.he100||0)+(+l.he150||0);if(l.editado)c.edit++;
@@ -6943,18 +6943,18 @@ function roboExportFormatado(){
   var per=con.regs.length?con.regs[0].per:'';
   var wb=new ExcelJS.Workbook();
   wb.creator='CBSI Gestão Operacional v15';wb.created=new Date();
-  var tot={hn:0,he50:0,he100:0,he150:0,adn:0},valorTotal=0;
+  var tot={hn:0,he50:0,he50ap:0,he100:0,he150:0,adn:0},valorTotal=0;
   var funcs=Object.keys(con.porFunc).sort();
   var linhasFunc=funcs.map(function(f){
     var a=con.porFunc[f],vr=0;
     [['HN',a.hn],['HE50',a.he50],['HE100',a.he100],['HE150',a.he150],['ADN',a.adn]].forEach(function(p){var it=bmItemDe(f,p[0]);if(it)vr+=p[1]*it.pu});
-    tot.hn+=a.hn;tot.he50+=a.he50;tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn;valorTotal+=vr;
-    return{f:f,colabs:Object.keys(a.colabs).length,hn:a.hn,he50:a.he50,he100:a.he100,he150:a.he150,adn:a.adn,total:a.hn+a.he50+a.he100+a.he150,vr:vr};
+    tot.hn+=a.hn;tot.he50+=a.he50;tot.he50ap+=(+a.he50ap||0);tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn;valorTotal+=vr;
+    return{f:f,colabs:Object.keys(a.colabs).length,hn:a.hn,he50ap:(+a.he50ap||0),he50:a.he50,he100:a.he100,he150:a.he150,adn:a.adn,total:a.hn+a.he50+a.he100+a.he150,vr:vr};
   });
 
   // ===== ABA RESUMO =====
   var ws=wb.addWorksheet('Resumo',{views:[{showGridLines:false}]});
-  ws.columns=[{width:3},{width:16},{width:34},{width:9},{width:11},{width:11},{width:11},{width:11},{width:11},{width:12},{width:16}];
+  ws.columns=[{width:3},{width:16},{width:30},{width:8},{width:10},{width:11},{width:12},{width:10},{width:10},{width:9},{width:11},{width:14}];
   try{
     var imgId=wb.addImage({base64:ROBO_LOGO,extension:'png'});
     ws.addImage(imgId,{tl:{col:1,row:1},ext:{width:170,height:78}});
@@ -6967,40 +6967,40 @@ function roboExportFormatado(){
   ws.mergeCells('D5:K5');ws.getCell('D5').value='Apuração: '+(ref||'GERAL')+'    ·    Gerado em: '+new Date().toLocaleString('pt-BR')+'    ·    Fonte: Espelho do Cartão de Ponto (RH) via Robô de Ponto';
   ws.getCell('D5').font={size:9,color:{argb:XC.grayTx}};
   // KPIs
-  var kpis=[['Colaboradores',Object.keys(con.porColab).length,XC.navy],['HN — Hora Normal',tot.hn,XC.blue],['HE 50%',tot.he50,XC.orange],['HE 100%',tot.he100,XC.orange],['HE 150%',tot.he150,XC.orange],['AD. Noturno',tot.adn,XC.green],['Total de Horas',tot.hn+tot.he50+tot.he100+tot.he150,XC.navy],['Valor BM (R$)',valorTotal,XC.green]];
+  var kpis=[['Colaboradores',Object.keys(con.porColab).length,XC.navy],['HN — Hora Normal',tot.hn,XC.blue],['HE 50% Apurada',tot.he50ap,XC.orange],['HE 50% a Pagar',tot.he50,XC.red],['HE 100%',tot.he100,XC.orange],['HE 150%',tot.he150,XC.orange],['AD. Noturno',tot.adn,XC.green],['Total de Horas',tot.hn+tot.he50+tot.he100+tot.he150,XC.navy],['Valor BM (R$)',valorTotal,XC.green]];
   var col=2;
   kpis.forEach(function(k,i){
     var c1=ws.getRow(7).getCell(col+i),c2=ws.getRow(8).getCell(col+i);
     c1.value=k[0];c1.fill=xfill(k[2]);c1.font={bold:true,size:8,color:{argb:XC.white}};c1.alignment={horizontal:'center',vertical:'middle',wrapText:true};c1.border=xborda();
-    c2.value=(typeof k[1]==='number')?Math.round(k[1]*100)/100:k[1];c2.fill=xfill(XC.light);c2.font={bold:true,size:12,color:{argb:XC.navy}};c2.alignment={horizontal:'center'};c2.border=xborda();
-    if(i>0&&i<7)c2.numFmt='#,##0.00';if(i===7)c2.numFmt='"R$" #,##0.00';
+    c2.value=(typeof k[1]==='number')?Math.round(k[1]*1000)/1000:k[1];c2.fill=xfill(XC.light);c2.font={bold:true,size:12,color:{argb:XC.navy}};c2.alignment={horizontal:'center'};c2.border=xborda();
+    if(i>=1&&i<=7)c2.numFmt='#,##0.000';if(i===8)c2.numFmt='"R$" #,##0.00';
   });
   ws.getRow(7).height=24;ws.getRow(8).height=22;
   // Quadro por função
-  ws.mergeCells('B10:K10');ws.getCell('B10').value='QUADRO RESUMO — HORAS E VALOR POR FUNÇÃO COBRADA (QQP)';
+  ws.mergeCells('B10:L10');ws.getCell('B10').value='QUADRO RESUMO — HORAS E VALOR POR FUNÇÃO COBRADA (QQP)';
   ws.getCell('B10').font={bold:true,size:11,color:{argb:XC.white}};ws.getCell('B10').fill=xfill(XC.navy);ws.getCell('B10').alignment={horizontal:'center',vertical:'middle'};ws.getRow(10).height=20;
-  var hdr=ws.getRow(11);['','Função Cobrada','Função (detalhe)','Colab.','HN','HE 50%','HE 100%','HE 150%','AD.Not','Total h','Valor R$'].forEach(function(v,i){if(i>0)hdr.getCell(i+0).value=''});
   var hrow=ws.getRow(11);
-  ['Função Cobrada (QQP)','','Colab.','HN','HE 50%','HE 100%','HE 150%','AD.Not','Total Horas','Valor R$ (BM)'].forEach(function(v,i){hrow.getCell(i+2).value=v});
+  ['Função Cobrada (QQP)','','Colab.','HN','HE 50% Apur.','HE 50% a Pagar','HE 100%','HE 150%','AD.Not','Total Horas','Valor R$ (BM)'].forEach(function(v,i){hrow.getCell(i+2).value=v});
   ws.mergeCells('B11:C11');
   hrow.eachCell(function(cell){if(cell.value!==null&&cell.value!==''){cell.fill=xfill(XC.blue);cell.font={bold:true,size:9,color:{argb:XC.white}};cell.alignment={horizontal:'center',vertical:'middle'};cell.border=xborda()}});
   var r=12;
   linhasFunc.forEach(function(l,ix){
     var row=ws.getRow(r++);
     ws.mergeCells('B'+row.number+':C'+row.number);
-    var vals=[l.f,null,l.colabs,l.hn,l.he50,l.he100,l.he150,l.adn,l.total,l.vr];
-    vals.forEach(function(v,i){if(v===null)return;var c=row.getCell(i+2);c.value=(typeof v==='number')?Math.round(v*100)/100:v;c.border=xborda();
+    var vals=[l.f,null,l.colabs,l.hn,l.he50ap,l.he50,l.he100,l.he150,l.adn,l.total,l.vr];
+    vals.forEach(function(v,i){if(v===null)return;var c=row.getCell(i+2);c.value=(typeof v==='number')?Math.round(v*1000)/1000:v;c.border=xborda();
       if(ix%2)c.fill=xfill(XC.zebra);
-      if(i>=3&&i<=8)c.numFmt='#,##0.00';if(i===9){c.numFmt='"R$" #,##0.00';c.font={bold:true,color:{argb:XC.green}}}
+      if(i>=3&&i<=9)c.numFmt='#,##0.000';if(i===10){c.numFmt='"R$" #,##0.00';c.font={bold:true,color:{argb:XC.green}}}
+      if(i===5&&(+l.he50||0)<(+l.he50ap||0))c.font={color:{argb:XC.red}};
       if(i===0)c.font={bold:true,size:9,color:{argb:XC.navy}};
       c.alignment={horizontal:i===0?'left':'right',vertical:'middle'};
     });
   });
   var trow=ws.getRow(r);ws.mergeCells('B'+r+':C'+r);
-  var tvals=['TOTAL GERAL',null,Object.keys(con.porColab).length,tot.hn,tot.he50,tot.he100,tot.he150,tot.adn,tot.hn+tot.he50+tot.he100+tot.he150,valorTotal];
-  tvals.forEach(function(v,i){if(v===null)return;var c=trow.getCell(i+2);c.value=(typeof v==='number')?Math.round(v*100)/100:v;c.fill=xfill(XC.navy);c.font={bold:true,color:{argb:XC.white},size:10};c.border=xborda();c.alignment={horizontal:i===0?'left':'right'};if(i>=3&&i<=8)c.numFmt='#,##0.00';if(i===9)c.numFmt='"R$" #,##0.00'});
-  ws.mergeCells('B'+(r+2)+':K'+(r+2));
-  ws.getCell('B'+(r+2)).value='Valores calculados automaticamente a partir do Espelho de Ponto oficial do RH, cruzados com o cadastro de Efetivos e o De×Para de funções. Detalhamento completo nas abas seguintes · Memorial de Cálculo na última aba.';
+  var tvals=['TOTAL GERAL',null,Object.keys(con.porColab).length,tot.hn,tot.he50ap,tot.he50,tot.he100,tot.he150,tot.adn,tot.hn+tot.he50+tot.he100+tot.he150,valorTotal];
+  tvals.forEach(function(v,i){if(v===null)return;var c=trow.getCell(i+2);c.value=(typeof v==='number')?Math.round(v*1000)/1000:v;c.fill=xfill(XC.navy);c.font={bold:true,color:{argb:XC.white},size:10};c.border=xborda();c.alignment={horizontal:i===0?'left':'right'};if(i>=3&&i<=9)c.numFmt='#,##0.000';if(i===10)c.numFmt='"R$" #,##0.00'});
+  ws.mergeCells('B'+(r+2)+':L'+(r+2));
+  ws.getCell('B'+(r+2)).value='HE 50% Apurada = horas extras reais do ponto · HE 50% a Pagar = horas reconhecidas pelo cliente (De Acordo HE; sem autorização não paga). O Valor BM e o Total de Horas usam a HE 50% a Pagar. Horas em 3 casas decimais. Detalhamento nas abas Ponto Diário Individual e HE 50% Não Reconhecida · Memorial na última aba.';
   ws.getCell('B'+(r+2)).font={size:8,italic:true,color:{argb:XC.grayTx}};ws.getCell('B'+(r+2)).alignment={wrapText:true};
 
   // ===== ABA DETALHE =====
@@ -7011,7 +7011,7 @@ function roboExportFormatado(){
   con.regs.forEach(function(l,ix){
     var row=wd.addRow([l.ref,l.per,l.data,l.dow,l.phtd,l.id,l.mat,l.nome,l.cargo,l.funcQQP,l.hn,l.he50,l.he100,l.he150,l.adn,l.trab,l.obs,l.arq]);
     row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);
-      if(cn>=11&&cn<=16){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}});
+      if(cn>=11&&cn<=16){cell.numFmt='#,##0.000';cell.alignment={horizontal:'right'}}});
   });
   wd.autoFilter={from:'A1',to:'R1'};
   // ===== ABA PONTO DIÁRIO INDIVIDUAL (auditável — apurado × medido, dia a dia) =====
@@ -7026,7 +7026,7 @@ function roboExportFormatado(){
     var row=wpi.addRow([l.mat,l.nome,l.funcQQP,l.data,l.dow,ent,sai,r2(+l.trabAp||0),
       r2(+l.hnAp||0),r2(+l.hn||0),r2(+l.he50ap||0),r2(+l.he50||0),r2(+l.he100ap||0),r2(+l.he100||0),r2(+l.he150ap||0),r2(+l.he150||0),r2(+l.adnAp||0),r2(+l.adn||0),editado,e.nota||'']);
     row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);
-      if(cn>=8&&cn<=18){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}
+      if(cn>=8&&cn<=18){cell.numFmt='#,##0.000';cell.alignment={horizontal:'right'}}
       if(cn===19&&editado){cell.font={size:9,bold:true,color:{argb:XC.orange}}}});
   });
   wpi.autoFilter={from:'A1',to:'T1'};
@@ -7039,7 +7039,7 @@ function roboExportFormatado(){
     var rn=row.number;
     row.getCell(12).value={formula:'SUM(G'+rn+':J'+rn+')'};
     row.getCell(14).value={formula:'M'+rn+'-L'+rn};
-    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);if(cn>=7&&cn<=14)cell.numFmt='#,##0.00';
+    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);if(cn>=7&&cn<=14)cell.numFmt='#,##0.000';
       if(cn===14){cell.font={size:9,color:{argb:XC.grayTx}}}});
   });
   wc.autoFilter={from:'A1',to:'O1'};
@@ -7053,7 +7053,7 @@ function roboExportFormatado(){
     var rn=row.number;
     ['K','L','M','N','O'].forEach(function(cl,i){row.getCell(3+i).value={formula:'SUMIFS(Detalhe!'+cl+'2:'+cl+nDet+',Detalhe!J2:J'+nDet+',A'+rn+')'}});
     row.getCell(8).value={formula:'SUM(C'+rn+':F'+rn+')'};
-    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);if(cn>=3&&cn<=8)cell.numFmt='#,##0.00';if(cn===9){cell.numFmt='"R$" #,##0.00';cell.font={bold:true,size:9,color:{argb:XC.green}}}});
+    row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);if(cn>=3&&cn<=8)cell.numFmt='#,##0.000';if(cn===9){cell.numFmt='"R$" #,##0.00';cell.font={bold:true,size:9,color:{argb:XC.green}}}});
   });
   // ===== ABA DE×PARA =====
   var wp=wb.addWorksheet('De x Para');
@@ -7077,11 +7077,11 @@ function roboExportFormatado(){
     var status=pg<=0.001?'NÃO reconhecida':(pg<ap-0.01?'Parcial':'Reconhecida');
     var row=wnr.addRow([l.mat,l.nome,l.funcQQP,l.data,l.dow,ent,sai,r2(ap),r2(pg),r2(corte),status,a.ref||'']);
     row.eachCell(function(cell,cn){cell.border=xborda();cell.font={size:9};if(ix%2)cell.fill=xfill(XC.zebra);
-      if(cn>=8&&cn<=10){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}
+      if(cn>=8&&cn<=10){cell.numFmt='#,##0.000';cell.alignment={horizontal:'right'}}
       if(cn===11){cell.font={size:9,bold:true,color:{argb:pg<=0.001?XC.red:(pg<ap-0.01?XC.orange:XC.green)}}}});
   });
   var trow=wnr.addRow(['','','','','','','TOTAL',r2(tApu),r2(tPago),r2(tApu-tPago),'','']);
-  trow.eachCell(function(cell,cn){cell.font={bold:true,size:9};if(cn>=8&&cn<=10){cell.numFmt='#,##0.00';cell.alignment={horizontal:'right'}}});
+  trow.eachCell(function(cell,cn){cell.font={bold:true,size:9};if(cn>=8&&cn<=10){cell.numFmt='#,##0.000';cell.alignment={horizontal:'right'}}});
   wnr.autoFilter={from:'A1',to:'L1'};
 
   var wm=wb.addWorksheet('Memorial de Cálculo',{views:[{showGridLines:false}]});
@@ -7127,7 +7127,7 @@ function roboExportFormatado(){
     rlog('Robô de Ponto','Exportar Excel formatado',ref||'geral');
     rtoast('📥 Planilha formatada gerada: '+a.download);
   });
-  function r2(x){return Math.round(x*100)/100}
+  function r2(x){return Math.round(x*1000)/1000}
 }
 
 function roboExportSimples(){
@@ -7174,7 +7174,7 @@ function roboExportSimples(){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(dp),'De x Para');
   XLSX.writeFile(wb,'Robo_Ponto_'+String(FA.rotulo||'GERAL').replace(/[\/\s]/g,'-')+'.xlsx');
   rlog('Robô de Ponto','Exportar Excel',ref||'geral');
-  function r2(x){return Math.round(x*100)/100}
+  function r2(x){return Math.round(x*1000)/1000}
 }
 function roboImprimir(){
   var FA=roboFiltroAtivo();var ref=FA.titulo||FA.rotulo;
@@ -7223,7 +7223,7 @@ function roboAplicarBM(){
   var aplicados=0;
   Object.keys(porItem).forEach(function(itId){
     var it=getBM().find(function(i){return String(i.it)===String(itId)});
-    if(it){it.nm=Math.round(porItem[itId]*100)/100;aplicados++}
+    if(it){it.nm=Math.round(porItem[itId]*1000)/1000;aplicados++}
   });
   lss('cbsi-v15-robo-bmitens',Object.keys(porItem));
   bmPersist();
@@ -7845,8 +7845,8 @@ function renderRobo(){
   var refs=roboRefs();
   var FA=roboFiltroAtivo();window.FA=FA;
   var con=roboConsolidaRegs(FA.regs);
-  var tot={hn:0,he50:0,he100:0,he150:0,adn:0};
-  Object.values(con.porFunc).forEach(function(a){tot.hn+=a.hn;tot.he50+=a.he50;tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn});
+  var tot={hn:0,he50:0,he50ap:0,he100:0,he150:0,adn:0};
+  Object.values(con.porFunc).forEach(function(a){tot.hn+=a.hn;tot.he50+=a.he50;tot.he50ap+=(+a.he50ap||0);tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn});
   var funcs=funcoesBM();
   var semDepara=Object.keys(con.porFunc).filter(function(f){return f.indexOf('(sem De×Para')===0});
 
@@ -7898,7 +7898,7 @@ function renderRobo(){
    })()
   // KPIs
   +'<div class="g g5" style="margin-bottom:8px">'
-  +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')+kpi('HE 50%',h2hm(tot.he50),'var(--ca)')+kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
+  +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')+kpi('HE 50% apur.→pagar',h2hm(tot.he50ap)+' → '+h2hm(tot.he50),'var(--ca)')+kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
   +'</div>'
   +capacidadeHTML(FA,con)
   +deAcordoHTML(FA)
@@ -8081,7 +8081,7 @@ try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
 try{
-  var calcAssin='planilha-v5|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao;
+  var calcAssin='planilha-v6|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao;
   if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
     var rc=window.roboRecalcular(true);
     lss('cbsi-v15-robo-calcver',calcAssin);
