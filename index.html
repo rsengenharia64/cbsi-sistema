@@ -6850,7 +6850,7 @@ function bmValorApurado(regs){
 function fixPlanPeriodo(){
   try{
     var plan=document.getElementById('p-plan');if(!plan)return;
-    var sm=(typeof SM!=='undefined')?[].slice.call(SM):[];
+    var sm=(typeof SM!=='undefined')?Array.from(SM):[];
     var nsel=sm.length, parcial=nsel>0&&nsel<12;
     var old=plan.querySelector('#planPeriodoBanner');if(old)old.remove();
     var MN=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
