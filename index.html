@@ -7485,10 +7485,12 @@ function pintRecalcDerivados(corte){
         if(mesCorte>=1&&mesCorte<=12)return mesCorte;
         return 12; // último recurso: nunca perde o laudo da soma
       };
-      // ÁREA realizada por mês (só laudos com m² executado) — mês do término/realização
+      // ÁREA realizada por mês (só laudos com m² executado) — mês da REALIZAÇÃO: término real (df) ou início
+      // (di) se em curso; sem data, mês do corte (via _mesDe). NÃO usar dfProg aqui: é data PROGRAMADA (futura)
+      // e jogaria m² já realizado num mês que ainda não veio, distorcendo a curva mensal.
       L.forEach(function(l){
         var m2=+l.m2e||0;if(m2<=0)return;
-        var mm=_mesDe([l.df,l.di,l.dfProg]);
+        var mm=_mesDe([l.df,l.di]);
         real[mm-1]+=m2;
         if(l.pg==='EXTRA'||l.pm==='EXTRA')exc[mm-1]++;
       });
@@ -7498,7 +7500,7 @@ function pintRecalcDerivados(corte){
       L.forEach(function(l){
         if(l.st!=='CONCLUÍDO')return;
         if(l.pg==='EXTRA'||l.pm==='EXTRA')return;
-        var mm=_mesDe([l.df,l.di,l.dfProg,l.dfBL]);
+        var mm=_mesDe([l.df,l.di]);   // mês da conclusão real (fallback: corte) — Σ garantido = laudoExec
         laud[mm-1]++;
       });
       // (o.laudos é o PLANO baseline mensal do sistema — não sobrescrever; o realizado vai em laudosReal e em D.meses.lr)
