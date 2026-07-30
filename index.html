@@ -7535,14 +7535,21 @@ function pintRecalcDerivados(corte){
       // (data-fim baseline dfBL). A soma de m² por dfBL bate com a meta anual do painel — logo é a régua
       // correta. Antes o "plano mensal de laudos" era um hardcode na base que não vinha do painel.
       var ldMeta=[0,0,0,0,0,0,0,0,0,0,0,0],m2Meta=[0,0,0,0,0,0,0,0,0,0,0,0];
+      // LAUDOS PREVISTOS por mês (CONTAGEM): TODA a meta, com placement garantido (dfBL→prog→real→corte),
+      // para Σ(meses)=laudoMeta anual (259). Assim o denominador do período fecha com o ano.
       L.forEach(function(l){
         if(l.st==='CANCELADO')return;
-        if(l.pg==='EXTRA'||l.pm==='EXTRA')return;   // só META (para Σ bater com laudoMeta anual = 259)
-        // baseline oficial do painel (dfBL) com placement garantido; os laudos sem baseline caem no term.
-        // programado/real e, na falta de qualquer data, no mês do corte — assim TODOS os laudos da meta entram
-        // no plano e Σ(meses)=laudoMeta anual (259).
+        if(l.pg==='EXTRA'||l.pm==='EXTRA')return;   // só META
         var mm=_mesDe([l.dfBL,l.dfProg,l.df,l.di]);
-        ldMeta[mm-1]++;m2Meta[mm-1]+=(+l.m2a||+l.m2l||0);
+        ldMeta[mm-1]++;
+      });
+      // m² META por mês: curva de planejamento pela BASELINE oficial (dfBL). Mantida só-dfBL (Σ≈46.945, a meta
+      // anual do painel) — NÃO inflar com laudos sem baseline, que não têm m² de plano alocado por mês.
+      L.forEach(function(l){
+        if(l.st==='CANCELADO')return;
+        var mm=parseInt(String(l.dfBL||'').split('/')[1]);
+        if(!(mm>=1&&mm<=12))return;
+        m2Meta[mm-1]+=(+l.m2a||+l.m2l||0);
       });
       M.forEach(function(o,i){o.laudos=ldMeta[i];o.m2meta=Math.round(m2Meta[i]*100)/100});
       // RETROALIMENTAÇÃO → módulo de Lançamento (D.meses): realizado E previsto mensais vêm do PAINEL.
