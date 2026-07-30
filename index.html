@@ -7635,6 +7635,18 @@ function fixDashPeriodo(){
     var dash=document.getElementById('p-dash');if(!dash)return;
     var agg=aggSelMeses();var nsel=agg.meses.length;var rot=_pdRot(nsel);
     var parcial=nsel>0&&nsel<12;
+    // ESTADO DO FILTRO explícito no topo do dashboard (evita "zero meses = 77" sem aviso)
+    var ban=document.getElementById('pdBanner');if(ban)ban.remove();
+    ban=document.createElement('div');ban.id='pdBanner';
+    var MNb=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    if(nsel===0){
+      ban.style.cssText='background:rgba(255,173,0,.12);border:1px solid var(--ca);color:var(--tx);font-size:10px;font-weight:700;padding:6px 10px;border-radius:6px;margin-bottom:8px';
+      ban.innerHTML='⚠️ Nenhum mês selecionado — exibindo <b>ANO INTEIRO 2026 (acumulado)</b>. Clique nos meses acima para filtrar o período.';
+    }else{
+      ban.style.cssText='background:rgba(0,173,249,.10);border:1px solid var(--cs);color:var(--tx);font-size:10px;font-weight:700;padding:5px 10px;border-radius:6px;margin-bottom:8px';
+      ban.innerHTML='📅 Exibindo '+(nsel===12?'<b>ANO INTEIRO 2026 (acumulado)</b>':('<b>período: '+agg.meses.map(function(m){return MNb[m-1]}).join('+')+'</b> — todos os números do dashboard refletem essa seleção'));
+    }
+    dash.insertBefore(ban,dash.firstChild);
     // medidores Laudos/Área (sempre refletem a seleção: Mês / Período / Ano)
     var g1=document.getElementById('g1'),g2=document.getElementById('g2');
     if(g1&&typeof gauge==='function')gauge(g1,_pdPct(agg.lr,agg.lp),'Laudos '+rot,agg.lr+'/'+agg.lp,agg.lp+' laudos');
