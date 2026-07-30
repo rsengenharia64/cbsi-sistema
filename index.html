@@ -6877,6 +6877,50 @@ function fixPlanPeriodo(){
     tbls.forEach(function(tb){[].slice.call(tb.querySelectorAll('tbody tr')).forEach(function(r){var c=r.querySelector('td');if(!c)return;var mm=MN.indexOf((c.textContent||'').trim())+1;if(mm>=1&&mm<=12){if(sm.indexOf(mm)>=0){r.style.opacity='1';r.style.background='rgba(46,125,50,.07)';}else{r.style.opacity='.38';r.style.background='';}}})});
   }catch(e){console.warn('fixPlanPeriodo:',e)}
 }
+// EVOLUÇÃO ATUAL — injeta no Cronograma de Desenvolvimento as entregas desta rodada (fonte painel + coerência),
+// sem tocar o código-base: adiciona um card de fase e atualiza os contadores (Total/Implementadas/Progresso).
+var DEV_EVO_ITENS=[
+  {n:'Painel de Pintura via Google Drive (auto-atualização a cada 10 min)',d:'Varredura das abas do painel no Drive; laudos, m², meta e curva mensal alimentados automaticamente (fonte única de todas as telas).'},
+  {n:'Área realizada = soma de cada mês (painel)',d:'Acumulado do Dashboard, One Page e Planejamento idêntico à soma mês a mês (12.353 m²). Recorte só-meta preservado para referência.'},
+  {n:'BM Acumulado vinculado à apuração do espelho de ponto',d:'Card = acum. anterior + horas a pagar (De Acordo HE) × preço BM. Deixou de ser placeholder fixo de 47%.'},
+  {n:'Coerência Laudos: período = ano',d:'Σ dos meses = total anual (63 realizados / 259 meta). Selecionar todos os meses reproduz a visão do ano.'},
+  {n:'Percentual período × meta anual refinado',d:'Dois percentuais que recalculam pela seleção; um único mês mostra sua fração real da meta anual (não mais 24% fixo).'},
+  {n:'De Acordo HE — autorização manual por dia',d:'HE 50% não paga por padrão; comando do gestor autoriza e o sistema recalcula. Registro de horas não pagas por pessoa.'},
+  {n:'Auditoria & edição de ponto diário',d:'Edita marcações (recalcula entrada/saída) e horas reconhecidas por tipo, com justificativa obrigatória. Totalizador horas reais × medidas.'},
+  {n:'Contabilização em 3 casas decimais + Resumo HE 50%',d:'Precisão de horas em 3 casas; o quadro-resumo passou a puxar corretamente a HE 50%.'},
+  {n:'Dashboard 100% reativo ao filtro de meses',d:'Todos os cards, TAC, Dados Reais, medidores e gráfico recalculam por mês. Banner explícito de período/ano.'},
+  {n:'Meta de laudos e m² derivada do painel',d:'Plano mensal vem da baseline (dfBL) de cada laudo, não de hardcode. Baseline sincronizada (259 laudos).'},
+  {n:'Planejamento (Motor) responde ao filtro de meses',d:'Executado e Média/mês refletem os meses selecionados; matriz destacada; Meta e Projeção seguem anuais.'},
+  {n:'Exportação Excel formatada — Auditoria de Ponto',d:'Abas: Resumo, Ponto Diário Individual, Por Colaborador (real × medido), HE 50% não reconhecida, Memorial.'},
+  {n:'Regra de cálculo do cliente replicada',d:'Racional do espelho (jornada, HN/HE/ADN, tolerâncias, De Acordo HE) documentado nas premissas limitantes.'}
+];
+function fixDevRoadmap(){
+  try{
+    var dev=document.getElementById('p-dev');if(!dev)return;
+    if(dev.querySelector('#devEvoCard'))return; // já injetado nesta renderização
+    var N=DEV_EVO_ITENS.length, cor='#0FA972';
+    // card da fase
+    var card=document.createElement('div');card.className='cd';card.id='devEvoCard';
+    card.style.cssText='position:relative;border-left:3px solid '+cor;
+    var badge=function(bg,c,txt){return '<span style="font-size:7px;font-weight:700;padding:2px 6px;border-radius:10px;background:'+bg+';color:'+c+'">'+txt+'</span>'};
+    var itens=DEV_EVO_ITENS.map(function(it){return '<div style="display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.02)"><span style="font-size:12px;flex-shrink:0;margin-top:1px">✅</span><div style="flex:1"><div style="font-size:10px;font-weight:600;color:var(--tx)">'+it.n+'</div><div style="font-size:8px;color:var(--dm);margin-top:1px;line-height:1.4">'+it.d+'</div></div></div>'}).join('');
+    card.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:800;color:'+cor+'">🚀 EVOLUÇÃO ATUAL — Integração Painel & Coerência de Dados</span>'
+      +badge(cor+'20',cor,N+' itens')+badge('rgba(0,196,140,.15)','var(--gn)','✓ '+N+' ok')+badge(cor+'15',cor,'100%')
+      +badge('rgba(0,0,0,.04)','var(--dm)','⏱ Jul/26 · IA+Dev · fonte: Painel do Drive')+'</div></div><div>'+itens+'</div>';
+    // insere antes do card "Stack Tecnológico" (último .cd) ou no fim
+    var cds=dev.querySelectorAll('.cd');var stack=null;
+    for(var i=0;i<cds.length;i++){if(/Stack Tecnológico/i.test(cds[i].textContent||'')){stack=cds[i];break;}}
+    if(stack&&stack.parentNode)stack.parentNode.insertBefore(card,stack);else dev.appendChild(card);
+    // atualiza contadores (Total/Implementadas/Pendentes/Progresso)
+    var kps=dev.querySelectorAll('.g .kp');var tot=0,done=0;
+    [].slice.call(kps).forEach(function(k){var kl=k.querySelector('.kl'),kv=k.querySelector('.kv');if(!kl||!kv)return;var t=(kl.textContent||'').trim();var num=parseInt((kv.textContent||'').replace(/\D/g,''))||0;
+      if(/Total Features/i.test(t)){tot=num+N;kv.textContent=tot;}
+      else if(/Implementadas/i.test(t)){done=num+N;kv.textContent=done;}
+    });
+    if(tot>0&&done>0){[].slice.call(kps).forEach(function(k){var kl=k.querySelector('.kl'),kv=k.querySelector('.kv');if(!kl||!kv)return;if(/Progresso/i.test((kl.textContent||''))){var pc=Math.round(done/tot*100);kv.textContent=pc+'%';var kf=k.querySelector('.kf');if(kf)kf.style.width=pc+'%';}});}
+  }catch(e){console.warn('fixDevRoadmap:',e)}
+}
 // sincroniza qualquer rótulo "baseline NNN laudos" (Planejamento) com a meta viva do painel (laudoMeta)
 function fixBaselineLaudos(){
   try{
@@ -8322,6 +8366,9 @@ try{
   // A meta viva do painel é PINT_META.laudoMeta (259) — sincroniza o subtítulo com a mesma fonte das demais abas.
   var _rpOrig=window.renderPlan;
   if(typeof _rpOrig==='function'){window.renderPlan=function(){var r=_rpOrig.apply(this,arguments);try{fixBaselineLaudos()}catch(e){}try{fixPlanPeriodo()}catch(e){}return r}}
+  // Cronograma de Desenvolvimento: injeta a fase "Evolução Atual" e atualiza os contadores a cada render.
+  var _bdOrig=window.buildDev;
+  if(typeof _bdOrig==='function'){window.buildDev=function(){var r=_bdOrig.apply(this,arguments);try{fixDevRoadmap()}catch(e){}return r}}
   // filtro de meses (TM/SA/SC) só re-renderiza o Dashboard via R(); aqui garantimos que o Planejamento,
   // se estiver aberto, também seja re-renderizado ao mudar a seleção — daí o fixPlanPeriodo reflete o filtro.
   ['TM','SA','SC'].forEach(function(fn){var orig=window[fn];if(typeof orig==='function'){window[fn]=function(){var r=orig.apply(this,arguments);try{var pp=document.getElementById('p-plan');if(pp&&pp.offsetParent!==null&&typeof renderPlan==='function')renderPlan();}catch(e){}return r}}});
