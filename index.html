@@ -7734,11 +7734,15 @@ function fixDashPeriodo(){
     if(!parcial)return; // ano inteiro / nenhum → mantém o acumulado que o R() já renderizou
     var mm=typeof PINT_META!=='undefined'?PINT_META:{laudoExec:0,laudoMeta:0,m2Real:0,m2Meta:0};
     // % de atingimento (período e acumulado do ano) + META TOTAL sempre visível
-    var lpPct=_pdPct(agg.lr,agg.lp), lAcum=_pdPct(mm.laudoExec,mm.laudoMeta);
-    var aPct=_pdPct(agg.ar,agg.ap),  aAcum=_pdPct(mm.m2Real,mm.m2Meta);
-    // TOPO — número do período + % · e a META TOTAL do ano com seu %
-    _pdSetCard(dash,'Laudos PIN',agg.lr+'/'+agg.lp,'<b style="color:var(--cs)">'+lpPct+'% período</b> · meta total '+mm.laudoMeta+' ('+lAcum+'% acum.)');
-    _pdSetCard(dash,'Área m² PIN',_pdFmt(agg.ar),'<b style="color:var(--co)">'+aPct+'% período</b> · meta anual '+_pdFmt(mm.m2Meta)+' m² ('+aAcum+'% acum.)');
+    // DOIS percentuais, AMBOS recalculam com a seleção:
+    //  • "% período" = realizado ÷ meta DO(S) MÊS(ES) selecionado(s)  (ex.: Jan 7/15 = 47%)
+    //  • "% da meta anual" = realizado NOS MESES selecionados ÷ meta ANUAL (259 / 46.945)  (ex.: Jan 7/259 = 3%)
+    // Antes o 2º usava o total do ano (laudoExec=63) fixo, e mostrava "24%" mesmo com 1 mês (7 laudos) → incoerente.
+    var lpPct=_pdPct(agg.lr,agg.lp), lAcum=_pdPct(agg.lr,mm.laudoMeta);
+    var aPct=_pdPct(agg.ar,agg.ap),  aAcum=_pdPct(agg.ar,mm.m2Meta);
+    // TOPO — número do período + % · e a META TOTAL do ano com o % que os meses selecionados representam dela
+    _pdSetCard(dash,'Laudos PIN',agg.lr+'/'+agg.lp,'<b style="color:var(--cs)">'+lpPct+'% período</b> · meta anual '+mm.laudoMeta+' ('+lAcum+'% da meta)');
+    _pdSetCard(dash,'Área m² PIN',_pdFmt(agg.ar),'<b style="color:var(--co)">'+aPct+'% período</b> · meta anual '+_pdFmt(mm.m2Meta)+' m² ('+aAcum+'% da meta)');
     // PROGRAMAÇÃO TAC — paradas do(s) mês(es) selecionado(s)
     try{
       var hoje=(new Date(new Date().toDateString()));
@@ -7752,7 +7756,7 @@ function fixDashPeriodo(){
       _pdSetCard(dash,'Realizadas',String(done),pctD+'% concluído');
       _pdSetCard(dash,'Em Curso',String(act),'em execução agora');
       _pdSetCard(dash,'Programadas',String(plan),'a executar');
-      _pdSetCard(dash,'Laudos Pintura',agg.lr+'/'+agg.lp,'<b>'+lpPct+'% período</b> · meta total '+mm.laudoMeta+' ('+lAcum+'% acum.)');
+      _pdSetCard(dash,'Laudos Pintura',agg.lr+'/'+agg.lp,'<b>'+lpPct+'% período</b> · meta anual '+mm.laudoMeta+' ('+lAcum+'% da meta)');
       // barra empilhada (✓/⚡/📋) — atualiza rótulos e proporções
       var tot=Math.max(tac.length,1);
       [].slice.call(dash.querySelectorAll('div')).forEach(function(d){
