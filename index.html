@@ -7640,10 +7640,13 @@ function fixDashPeriodo(){
     if(g1&&typeof gauge==='function')gauge(g1,_pdPct(agg.lr,agg.lp),'Laudos '+rot,agg.lr+'/'+agg.lp,agg.lp+' laudos');
     if(g2&&typeof gauge==='function')gauge(g2,_pdPct(agg.ar,agg.ap),'Área '+rot,_pdFmt(agg.ar)+'m²',_pdFmt(agg.ap)+'m²');
     if(!parcial)return; // ano inteiro / nenhum → mantém o acumulado que o R() já renderizou
-    var mm=typeof PINT_META!=='undefined'?PINT_META:{laudoExec:0,laudoMeta:0,m2Real:0};
-    // TOPO — número principal passa a ser o do período (acumulado vai pro subtítulo)
-    _pdSetCard(dash,'Laudos PIN',agg.lr+'/'+agg.lp,'<b style="color:var(--cs)">período</b> · acum. '+mm.laudoExec+'/'+mm.laudoMeta);
-    _pdSetCard(dash,'Área m² PIN',_pdFmt(agg.ar),'<b style="color:var(--co)">período</b> · acum. '+_pdFmt(mm.m2Real)+' m²');
+    var mm=typeof PINT_META!=='undefined'?PINT_META:{laudoExec:0,laudoMeta:0,m2Real:0,m2Meta:0};
+    // % de atingimento (período e acumulado do ano) + META TOTAL sempre visível
+    var lpPct=_pdPct(agg.lr,agg.lp), lAcum=_pdPct(mm.laudoExec,mm.laudoMeta);
+    var aPct=_pdPct(agg.ar,agg.ap),  aAcum=_pdPct(mm.m2Real,mm.m2Meta);
+    // TOPO — número do período + % · e a META TOTAL do ano com seu %
+    _pdSetCard(dash,'Laudos PIN',agg.lr+'/'+agg.lp,'<b style="color:var(--cs)">'+lpPct+'% período</b> · meta total '+mm.laudoMeta+' ('+lAcum+'% acum.)');
+    _pdSetCard(dash,'Área m² PIN',_pdFmt(agg.ar),'<b style="color:var(--co)">'+aPct+'% período</b> · meta anual '+_pdFmt(mm.m2Meta)+' m² ('+aAcum+'% acum.)');
     // PROGRAMAÇÃO TAC — paradas do(s) mês(es) selecionado(s)
     try{
       var hoje=(new Date(new Date().toDateString()));
@@ -7657,7 +7660,7 @@ function fixDashPeriodo(){
       _pdSetCard(dash,'Realizadas',String(done),pctD+'% concluído');
       _pdSetCard(dash,'Em Curso',String(act),'em execução agora');
       _pdSetCard(dash,'Programadas',String(plan),'a executar');
-      _pdSetCard(dash,'Laudos Pintura',agg.lr+'/'+agg.lp,'período');
+      _pdSetCard(dash,'Laudos Pintura',agg.lr+'/'+agg.lp,'<b>'+lpPct+'% período</b> · meta total '+mm.laudoMeta+' ('+lAcum+'% acum.)');
       // barra empilhada (✓/⚡/📋) — atualiza rótulos e proporções
       var tot=Math.max(tac.length,1);
       [].slice.call(dash.querySelectorAll('div')).forEach(function(d){
