@@ -7495,13 +7495,17 @@ function fixDashPrevReal(){
       return{n:n,cap:cap,disp:disp,re:re};
     });
     var fmv=function(x){return Math.round(x).toLocaleString('pt-BR')};
-    el.innerHTML=bd.map(function(d){
+    // meses selecionados no filtro global — destaca os selecionados e esmaece os demais
+    var selSet={},nsel=0;try{if(typeof SM!=='undefined'&&SM&&SM.size){[...SM].forEach(function(m){selSet[m]=1;nsel++})}}catch(e){}
+    var parcial=nsel>0&&nsel<12;
+    el.innerHTML=bd.map(function(d,i){
+      var on=!parcial||selSet[i+1];
       var ap=(d.disp>0&&d.re>0)?Math.round(d.re/d.disp*100):null;
-      return '<div class="bi" style="min-width:46px"><div class="bw" style="height:80px;gap:1px">'
+      return '<div class="bi" style="min-width:46px;opacity:'+(on?1:0.22)+';transition:opacity .2s"><div class="bw" style="height:80px;gap:1px">'
         +'<div class="bc" style="height:'+((d.cap/mx)*70).toFixed(1)+'px;background:rgba(7,69,108,.45);min-height:'+(d.cap>0?'3px':'1px')+';border-radius:2px 2px 0 0" title="Capacidade prevista: '+fmv(d.cap)+' m²"></div>'
         +'<div class="bc" style="height:'+((d.disp/mx)*70).toFixed(1)+'px;background:#E0A800;min-height:'+(d.disp>0?'3px':'0')+';border-radius:2px 2px 0 0" title="Demanda disponibilizada: '+fmv(d.disp)+' m²"></div>'
         +'<div class="bc" style="height:'+((d.re/mx)*70).toFixed(1)+'px;background:var(--co);min-height:'+(d.re>0?'3px':'0')+';border-radius:2px 2px 0 0" title="Realizado: '+fmv(d.re)+' m²"></div>'
-        +'</div><div class="bl" style="font-size:7px">'+d.n+'</div>'
+        +'</div><div class="bl" style="font-size:7px;'+(on&&parcial?'font-weight:800;color:var(--co)':'')+'">'+d.n+'</div>'
         +(d.re>0?('<div style="font-size:6px;color:var(--co);font-weight:700">'+fmv(d.re)+'</div>'):'<div style="font-size:6px;color:var(--dm)">—</div>')
         +(ap!=null?('<div style="font-size:6px;color:#B8860B;font-weight:700">'+ap+'% dem.</div>'):'')
         +'</div>';
@@ -7509,14 +7513,15 @@ function fixDashPrevReal(){
     var card=el.closest('.cd');
     if(card){
       var ct=card.querySelector('.ct');
-      if(ct&&ct.textContent.indexOf('Demanda')<0)ct.textContent='Capacidade × Demanda Disponibilizada × Realizado (m²)';
-      var somaD=0,somaR=0;bd.forEach(function(d){if(d.disp>0){somaD+=d.disp;somaR+=d.re}});
+      if(ct){var base='Capacidade × Demanda Disponibilizada × Realizado (m²)';ct.textContent=base+(parcial?(' — período: '+bd.filter(function(d,i){return selSet[i+1]}).map(function(d){return d.n}).join('+')):'');}
+      // aproveitamento considera SÓ os meses selecionados (ou o ano todo se nenhum)
+      var somaD=0,somaR=0;bd.forEach(function(d,i){if(d.disp>0&&(!parcial||selSet[i+1])){somaD+=d.disp;somaR+=d.re}});
       var apG=somaD>0?Math.round(somaR/somaD*100):0;
       var leg=card.querySelector('div[style*="display:flex"]');
       if(leg)leg.innerHTML='<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(7,69,108,.45)"></span>Capacidade prevista</span>'
         +'<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:#E0A800"></span>Demanda disponibilizada (m² por laudo)</span>'
         +'<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:var(--co)"></span>Realizado</span>'
-        +'<span style="margin-left:auto;font-weight:800;color:#B8860B">✔ Aproveitamento da demanda: '+apG+'%</span>';
+        +'<span style="margin-left:auto;font-weight:800;color:#B8860B">✔ Aproveitamento da demanda'+(parcial?' (período)':'')+': '+apG+'%</span>';
     }
   }catch(e){console.warn('fixDashPrevReal:',e)}
 }
