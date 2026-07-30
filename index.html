@@ -6841,6 +6841,16 @@ function bmValorApurado(regs){
 // CARD "BM Acumulado" do Dashboard: deixa de ser placeholder fixo (47% · R$1,94M) e passa a ser o BM REAL =
 // acum. anterior (faturado nas medições passadas, editável na aba BM) + competência APURADA no espelho de ponto
 // (horas a pagar × preço BM). Assim o dashboard reflete o vínculo pedido com a apuração de horas a pagar.
+// sincroniza qualquer rótulo "baseline NNN laudos" (Planejamento) com a meta viva do painel (laudoMeta)
+function fixBaselineLaudos(){
+  try{
+    var meta=(typeof PINT_META!=='undefined')?(+PINT_META.laudoMeta||0):0;if(!(meta>0))return;
+    var els=document.querySelectorAll('.ks,div,span,small');
+    for(var i=0;i<els.length;i++){var el=els[i];if(el.children.length)continue;var t=el.textContent||'';
+      if(/baseline\s*\d+\s*laudos/i.test(t)){var novo=t.replace(/baseline\s*\d+\s*laudos/i,'baseline '+meta+' laudos');if(novo!==t)el.textContent=novo;}
+    }
+  }catch(e){console.warn('fixBaselineLaudos:',e)}
+}
 function fixBmAcumDash(){
   try{
     var totalContrato=4140037.11;
@@ -8272,6 +8282,10 @@ try{
   if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}try{fixBmAcumDash()}catch(e){}return r}}
   var _rbmOrig=window.renderBM;
   if(typeof _rbmOrig==='function'){window.renderBM=function(){var r=_rbmOrig.apply(this,arguments);try{bmAcumAntUI()}catch(e){}return r}}
+  // Planejamento (Motor Inteligente): o card "Meta Anual m²" trazia "baseline 222 laudos" FIXO no código-base.
+  // A meta viva do painel é PINT_META.laudoMeta (259) — sincroniza o subtítulo com a mesma fonte das demais abas.
+  var _rpOrig=window.renderPlan;
+  if(typeof _rpOrig==='function'){window.renderPlan=function(){var r=_rpOrig.apply(this,arguments);try{fixBaselineLaudos()}catch(e){}return r}}
   setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}},1500);
 }catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
