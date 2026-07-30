@@ -7591,6 +7591,53 @@ function fixEfetivoCard(){
     }
   }catch(e){console.warn('fixEfetivoCard:',e)}
 }
+// ===== PERÍODO SELECIONADO (SOMA DOS MESES) — corrige a falha "último mês" no Dashboard e One Page =====
+// O sistema-base usava só o ÚLTIMO mês selecionado (mo=em(lm)) nos medidores e no One Page.
+// Aqui somamos TODOS os meses do filtro para que os dados reflitam a seleção do usuário.
+function aggSelMeses(){
+  var meses=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)meses=[...SM].sort(function(a,b){return a-b})}catch(e){}
+  var agg={lp:0,ap:0,lr:0,ar:0,ativs:[],notas:'',meses:meses};
+  var lista=meses.length?meses:[1,2,3,4,5,6,7,8,9,10,11,12];
+  lista.forEach(function(m){var o;try{o=em(m)}catch(e){o=null}if(o){agg.lp+=(+o.lp||0);agg.ap+=(+o.ap||0);agg.lr+=(+o.lr||0);agg.ar+=(+o.ar||0);if(o.ativs&&o.ativs.length)agg.ativs=agg.ativs.concat(o.ativs)}});
+  return agg;
+}
+function _pdFmt(x){return Math.round(x).toLocaleString('pt-BR')}
+function _pdPct(a,b){return b>0?Math.round(a/b*100):0}
+function _pdRot(n){return n<=1?'Mês':(n>=12?'Ano':'Período ('+n+' meses)')}
+// medidores g1/g2 + cards de topo passam a refletir a SOMA dos meses selecionados
+function fixDashPeriodo(){
+  try{
+    var dash=document.getElementById('p-dash');if(!dash)return;
+    var agg=aggSelMeses();var nsel=agg.meses.length;var rot=_pdRot(nsel);
+    var g1=document.getElementById('g1'),g2=document.getElementById('g2');
+    if(g1&&typeof gauge==='function')gauge(g1,_pdPct(agg.lr,agg.lp),'Laudos '+rot,agg.lr+'/'+agg.lp,agg.lp+' laudos');
+    if(g2&&typeof gauge==='function')gauge(g2,_pdPct(agg.ar,agg.ap),'Área '+rot,_pdFmt(agg.ar)+'m²',_pdFmt(agg.ap)+'m²');
+    // cards de topo: mostram o REALIZADO do período no subtítulo (mantendo o acumulado/meta anual)
+    var kps=[].slice.call(dash.querySelectorAll('.kp'));
+    kps.forEach(function(kp){
+      var kl=kp.querySelector('.kl'),ks=kp.querySelector('.ks');if(!kl||!ks)return;
+      var t=kl.textContent;
+      if(t.indexOf('Área m² PIN')>=0){ks.innerHTML='<b style="color:var(--co)">período: '+_pdFmt(agg.ar)+' m²</b> · meta anual '+_pdFmt(typeof PINT_META!=='undefined'?PINT_META.m2Meta:0);}
+      else if(t.indexOf('Laudos PIN')>=0){ks.innerHTML='<b style="color:var(--cs)">período: '+agg.lr+'/'+agg.lp+' laudos</b> · acum. ano';}
+    });
+  }catch(e){console.warn('fixDashPeriodo:',e)}
+}
+// One Page: passa a usar a SOMA dos meses selecionados (antes só o último mês)
+(function(){
+  try{
+    var _oprOrig=window.renderOPR;
+    if(typeof _oprOrig==='function'){
+      window.renderOPR=function(sel,lm,mo){
+        var agg=null;try{agg=aggSelMeses()}catch(e){}
+        var moUse=mo;
+        if(agg&&agg.meses.length&&mo){ // injeta o agregado preservando notas do último mês
+          moUse={lp:agg.lp,ap:agg.ap,lr:agg.lr,ar:agg.ar,ativs:agg.ativs.length?agg.ativs:(mo.ativs||[]),notas:mo.notas||''};
+        }
+        return _oprOrig.call(this,sel,lm,moUse);
+      };
+    }
+  }catch(e){console.warn('wrap renderOPR:',e)}
+})();
 // reaplica o snapshot salvo ao abrir o sistema (o original não persistia os laudos)
 function pintReaplicarSnapshot(){
   var snap=lsg('cbsi-v15-pint-full',null);
@@ -8067,10 +8114,10 @@ try{
   var _bpOrig=window.buildPintura;
   if(typeof _bpOrig==='function'){window.buildPintura=function(){var r=_bpOrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
   var _ROrig=window.R;
-  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{bmAcumAntUI()}catch(e){}return r}}
+  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}return r}}
   var _rbmOrig=window.renderBM;
   if(typeof _rbmOrig==='function'){window.renderBM=function(){var r=_rbmOrig.apply(this,arguments);try{bmAcumAntUI()}catch(e){}return r}}
-  setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}},1500);
+  setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}},1500);
 }catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
 try{fixMetricasJornada()}catch(e){}
