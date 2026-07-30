@@ -7467,7 +7467,7 @@ function pintRecalcDerivados(corte){
       var ldMeta=[0,0,0,0,0,0,0,0,0,0,0,0],m2Meta=[0,0,0,0,0,0,0,0,0,0,0,0];
       L.forEach(function(l){
         if(l.st==='CANCELADO')return;
-        var mm=parseInt(String(l.dfBL||l.dfProg||'').split('/')[1]);
+        var mm=parseInt(String(l.dfBL||'').split('/')[1]);   // baseline oficial do painel (m² por dfBL ≈ meta anual)
         if(!(mm>=1&&mm<=12))return;
         ldMeta[mm-1]++;m2Meta[mm-1]+=(+l.m2a||+l.m2l||0);
       });
