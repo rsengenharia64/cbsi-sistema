@@ -7494,11 +7494,14 @@ function pintRecalcDerivados(corte){
       // da meta (metaL, 9.901) e divergia da curva mensal (12.353, meta+fora). Guardamos o recorte só-meta em
       // m2RealMeta e passamos o acumulado oficial a ser a soma mensal do painel.
       try{
-        var _somaReal=0;M.forEach(function(o){_somaReal+=(+o.real||0)});
-        _somaReal=Math.round(_somaReal*100)/100;
-        META.m2RealMeta=META.m2Real;      // recorte só-meta (referência)
-        META.m2Real=_somaReal;            // acumulado = Σ meses (régua oficial do cliente)
-        META.m2Total=_somaReal;           // total pintado = mesma soma mensal
+        var _MM=(typeof getPintMeta==='function')?getPintMeta():(typeof PINT_META!=='undefined'?PINT_META:null);
+        if(_MM){
+          var _somaReal=0;M.forEach(function(o){_somaReal+=(+o.real||0)});
+          _somaReal=Math.round(_somaReal*100)/100;
+          _MM.m2RealMeta=_MM.m2Real;      // recorte só-meta (referência)
+          _MM.m2Real=_somaReal;           // acumulado = Σ meses (régua oficial do cliente)
+          _MM.m2Total=_somaReal;          // total pintado = mesma soma mensal
+        }
       }catch(e){console.warn('m2Real soma mensal:',e)}
       // DEMANDA DISPONIBILIZADA mensal (m² ajustado por laudo, no mês do término programado):
       // é a régua justa de produtividade — a demanda liberada pela VALE, não a capacidade teórica
