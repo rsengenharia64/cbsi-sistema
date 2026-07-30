@@ -7609,22 +7609,62 @@ function aggSelMeses(){
 function _pdFmt(x){return Math.round(x).toLocaleString('pt-BR')}
 function _pdPct(a,b){return b>0?Math.round(a/b*100):0}
 function _pdRot(n){return n<=1?'Mês':(n>=12?'Ano':'Período ('+n+' meses)')}
-// medidores g1/g2 + cards de topo passam a refletir a SOMA dos meses selecionados
+// RECÁLCULO COMPLETO DO DASHBOARD PELO PERÍODO SELECIONADO
+// Quando o usuário seleciona 1..11 meses, TODOS os números de produção passam a ser do período:
+// topo (Laudos/Área PIN), medidores Mês/Período, bloco Dados Reais, e Programação TAC (paradas do mês).
+function _pdSetCard(dash,lbl,val,sub){
+  [].slice.call(dash.querySelectorAll('.kp')).forEach(function(kp){
+    var kl=kp.querySelector('.kl');if(!kl||kl.textContent.trim().indexOf(lbl)!==0)return;
+    var kv=kp.querySelector('.kv');if(kv&&val!=null)kv.textContent=val;
+    var ks=kp.querySelector('.ks');if(ks&&sub!=null)ks.innerHTML=sub;
+  });
+}
 function fixDashPeriodo(){
   try{
     var dash=document.getElementById('p-dash');if(!dash)return;
     var agg=aggSelMeses();var nsel=agg.meses.length;var rot=_pdRot(nsel);
+    var parcial=nsel>0&&nsel<12;
+    // medidores Laudos/Área (sempre refletem a seleção: Mês / Período / Ano)
     var g1=document.getElementById('g1'),g2=document.getElementById('g2');
     if(g1&&typeof gauge==='function')gauge(g1,_pdPct(agg.lr,agg.lp),'Laudos '+rot,agg.lr+'/'+agg.lp,agg.lp+' laudos');
     if(g2&&typeof gauge==='function')gauge(g2,_pdPct(agg.ar,agg.ap),'Área '+rot,_pdFmt(agg.ar)+'m²',_pdFmt(agg.ap)+'m²');
-    // cards de topo: mostram o REALIZADO do período no subtítulo (mantendo o acumulado/meta anual)
-    var kps=[].slice.call(dash.querySelectorAll('.kp'));
-    kps.forEach(function(kp){
-      var kl=kp.querySelector('.kl'),ks=kp.querySelector('.ks');if(!kl||!ks)return;
-      var t=kl.textContent;
-      if(t.indexOf('Área m² PIN')>=0){ks.innerHTML='<b style="color:var(--co)">período: '+_pdFmt(agg.ar)+' m²</b> · meta anual '+_pdFmt(typeof PINT_META!=='undefined'?PINT_META.m2Meta:0);}
-      else if(t.indexOf('Laudos PIN')>=0){ks.innerHTML='<b style="color:var(--cs)">período: '+agg.lr+'/'+agg.lp+' laudos</b> · acum. ano';}
-    });
+    if(!parcial)return; // ano inteiro / nenhum → mantém o acumulado que o R() já renderizou
+    var mm=typeof PINT_META!=='undefined'?PINT_META:{laudoExec:0,laudoMeta:0,m2Real:0};
+    // TOPO — número principal passa a ser o do período (acumulado vai pro subtítulo)
+    _pdSetCard(dash,'Laudos PIN',agg.lr+'/'+agg.lp,'<b style="color:var(--cs)">período</b> · acum. '+mm.laudoExec+'/'+mm.laudoMeta);
+    _pdSetCard(dash,'Área m² PIN',_pdFmt(agg.ar),'<b style="color:var(--co)">período</b> · acum. '+_pdFmt(mm.m2Real)+' m²');
+    // PROGRAMAÇÃO TAC — paradas do(s) mês(es) selecionado(s)
+    try{
+      var hoje=(new Date(new Date().toDateString()));
+      var tac=PARADAS.filter(function(p){return p.e==='TAC'&&agg.meses.indexOf(p.m)>=0});
+      var done=tac.filter(function(p){return new Date(p.f)<hoje}).length;
+      var act=tac.filter(function(p){return new Date(p.i)<=hoje&&new Date(p.f)>=hoje}).length;
+      var plan=tac.filter(function(p){return new Date(p.i)>hoje}).length;
+      var pctD=tac.length?Math.round(done/tac.length*100):0;
+      _pdSetCard(dash,'Paradas TAC Ano',String(tac.length),'no período selecionado');
+      _pdSetCard(dash,'Avanço Geral',pctD+'%',null);
+      _pdSetCard(dash,'Realizadas',String(done),pctD+'% concluído');
+      _pdSetCard(dash,'Em Curso',String(act),'em execução agora');
+      _pdSetCard(dash,'Programadas',String(plan),'a executar');
+      _pdSetCard(dash,'Laudos Pintura',agg.lr+'/'+agg.lp,'período');
+      // barra empilhada (✓/⚡/📋) — atualiza rótulos e proporções
+      var tot=Math.max(tac.length,1);
+      [].slice.call(dash.querySelectorAll('div')).forEach(function(d){
+        var tx=d.textContent.trim();
+        if(/^✓\s*\d+$/.test(tx)&&d.children.length===0){d.textContent='✓ '+done;var w=d.closest('div[style*="flex:"]');if(w)w.style.flex=done||0.001;}
+        else if(/^⚡\s*\d+$/.test(tx)&&d.children.length===0){d.textContent='⚡ '+act;var w2=d.closest('div[style*="flex:"]');if(w2)w2.style.flex=Math.max(act,1);}
+        else if(/^📋\s*\d+$/.test(tx)&&d.children.length===0){d.textContent='📋 '+plan;var w3=d.closest('div[style*="flex:"]');if(w3)w3.style.flex=plan||0.001;}
+      });
+    }catch(e){}
+    // BLOCO "PINTURA — DADOS REAIS": LAUDOS e M² EXEC passam a ser do período
+    try{
+      var dr=[].slice.call(dash.querySelectorAll('.cd')).find(function(c){return c.textContent.indexOf('DADOS REAIS')>=0});
+      if(dr){[].slice.call(dr.querySelectorAll('div')).forEach(function(d){
+        if(d.children.length!==2)return;var big=d.children[0],small=d.children[1];var st=small.textContent;
+        if(/LAUDOS/.test(st)&&/%/.test(st))big.textContent=agg.lr+'/'+agg.lp;
+        else if(/M² EXEC/.test(st))big.textContent=_pdFmt(agg.ar);
+      });}
+    }catch(e){}
   }catch(e){console.warn('fixDashPeriodo:',e)}
 }
 // One Page: passa a usar a SOMA dos meses selecionados (antes só o último mês)
