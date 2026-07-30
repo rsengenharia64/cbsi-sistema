@@ -7478,13 +7478,28 @@ function pintRecalcDerivados(corte){
     if(M&&M.length===12){
       var real=[0,0,0,0,0,0,0,0,0,0,0,0],laud=[0,0,0,0,0,0,0,0,0,0,0,0],exc=[0,0,0,0,0,0,0,0,0,0,0,0];
       var mesCorte=corte?parseInt(String(corte).split('/')[1]):0;
+      // seletor de mês com placement GARANTIDO (sempre 1..12) — assim a Σ dos meses fecha exatamente
+      // com o total anual, independentemente de laudos sem data. cands = datas candidatas por prioridade.
+      var _mesDe=function(cands){
+        for(var k=0;k<cands.length;k++){var mm=parseInt(String(cands[k]||'').split('/')[1]);if(mm>=1&&mm<=12)return mm;}
+        if(mesCorte>=1&&mesCorte<=12)return mesCorte;
+        return 12; // último recurso: nunca perde o laudo da soma
+      };
+      // ÁREA realizada por mês (só laudos com m² executado) — mês do término/realização
       L.forEach(function(l){
         var m2=+l.m2e||0;if(m2<=0)return;
-        var mm=parseInt(String(l.df||l.di||'').split('/')[1]);
-        if(!(mm>=1&&mm<=12))mm=mesCorte; // em execução sem data-fim → mês do corte
-        if(!(mm>=1&&mm<=12))return;
-        real[mm-1]+=m2;laud[mm-1]++;
+        var mm=_mesDe([l.df,l.di,l.dfProg]);
+        real[mm-1]+=m2;
         if(l.pg==='EXTRA'||l.pm==='EXTRA')exc[mm-1]++;
+      });
+      // LAUDOS REALIZADOS por mês = laudos CONCLUÍDOS da META, contados INDEPENDENTE de terem m² (placement
+      // garantido). Mesma régua do acumulado laudoExec → Σ(meses)=laudoExec. Antes contava qualquer laudo com
+      // m² realizado (parciais+fora) e somava 86, caindo p/ 63 ao ver o ano todo. Agora é coerente e contínuo.
+      L.forEach(function(l){
+        if(l.st!=='CONCLUÍDO')return;
+        if(l.pg==='EXTRA'||l.pm==='EXTRA')return;
+        var mm=_mesDe([l.df,l.di,l.dfProg,l.dfBL]);
+        laud[mm-1]++;
       });
       // (o.laudos é o PLANO baseline mensal do sistema — não sobrescrever; o realizado vai em laudosReal e em D.meses.lr)
       M.forEach(function(o,i){o.real=Math.round(real[i]*100)/100;o.laudosReal=laud[i];o.laudoExc=exc[i]});
@@ -7520,8 +7535,11 @@ function pintRecalcDerivados(corte){
       var ldMeta=[0,0,0,0,0,0,0,0,0,0,0,0],m2Meta=[0,0,0,0,0,0,0,0,0,0,0,0];
       L.forEach(function(l){
         if(l.st==='CANCELADO')return;
-        var mm=parseInt(String(l.dfBL||'').split('/')[1]);   // baseline oficial do painel (m² por dfBL ≈ meta anual)
-        if(!(mm>=1&&mm<=12))return;
+        if(l.pg==='EXTRA'||l.pm==='EXTRA')return;   // só META (para Σ bater com laudoMeta anual = 259)
+        // baseline oficial do painel (dfBL) com placement garantido; os laudos sem baseline caem no term.
+        // programado/real e, na falta de qualquer data, no mês do corte — assim TODOS os laudos da meta entram
+        // no plano e Σ(meses)=laudoMeta anual (259).
+        var mm=_mesDe([l.dfBL,l.dfProg,l.df,l.di]);
         ldMeta[mm-1]++;m2Meta[mm-1]+=(+l.m2a||+l.m2l||0);
       });
       M.forEach(function(o,i){o.laudos=ldMeta[i];o.m2meta=Math.round(m2Meta[i]*100)/100});
