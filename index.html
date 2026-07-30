@@ -6824,7 +6824,45 @@ function bmAcumAntUI(){
     hdr.appendChild(d);
   }catch(e){}
 }
-window.bmSetAcumAnt=function(v){localStorage.setItem('cbsi-v15-bm-acumant',String(+v||0));try{renderBM()}catch(e){}};
+window.bmSetAcumAnt=function(v){localStorage.setItem('cbsi-v15-bm-acumant',String(+v||0));try{renderBM()}catch(e){}try{if(typeof R==='function')R()}catch(e){}};
+// VALOR BM APURADO no espelho de ponto: Σ (horas RECONHECIDAS a pagar × preço unitário BM) por função.
+// Usa exatamente as horas "a pagar" já ajustadas por De Acordo HE (he50 = a pagar), a mesma régua da aba BM.
+function bmValorApurado(regs){
+  try{
+    var con=roboConsolidaRegs(regs||ROBO_LANC||[]);var v=0;
+    Object.keys(con.porFunc).forEach(function(f){var a=con.porFunc[f];
+      [['HN',a.hn],['HE50',a.he50],['HE100',a.he100],['HE150',a.he150],['ADN',a.adn]].forEach(function(p){
+        var it=bmItemDe(f,p[0]);if(it)v+=(+p[1]||0)*(+it.pu||0);
+      });
+    });
+    return v;
+  }catch(e){console.warn('bmValorApurado:',e);return 0}
+}
+// CARD "BM Acumulado" do Dashboard: deixa de ser placeholder fixo (47% · R$1,94M) e passa a ser o BM REAL =
+// acum. anterior (faturado nas medições passadas, editável na aba BM) + competência APURADA no espelho de ponto
+// (horas a pagar × preço BM). Assim o dashboard reflete o vínculo pedido com a apuração de horas a pagar.
+function fixBmAcumDash(){
+  try{
+    var totalContrato=4140037.11;
+    var acumAnt=(+localStorage.getItem('cbsi-v15-bm-acumant'));if(!(acumAnt>0))acumAnt=1608423.72;
+    var vComp=bmValorApurado(ROBO_LANC);
+    var total=acumAnt+vComp;
+    var pct=totalContrato>0?Math.round(total/totalContrato*100):0;
+    var fM=function(x){return 'R$ '+(x/1e6).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'M'};
+    var fR=function(x){return 'R$ '+(x||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})};
+    var cards=document.querySelectorAll('.kp');
+    for(var i=0;i<cards.length;i++){
+      var kl=cards[i].querySelector('.kl');
+      if(kl&&/BM\s+Acumulado/i.test(kl.textContent||'')){
+        var kv=cards[i].querySelector('.kv');if(kv)kv.textContent=pct+'%';
+        var ks=cards[i].querySelector('.ks');if(ks)ks.textContent=fM(total)+' / '+fM(totalContrato);
+        var kf=cards[i].querySelector('.kf');if(kf)kf.style.width=Math.min(100,pct)+'%';
+        cards[i].title='BM real ='+' acum. anterior ('+fR(acumAnt)+') + competência apurada no espelho de ponto ('+fR(vComp)+') = '+fR(total)+' de '+fR(totalContrato)+' ('+pct+'%). Vínculo com as horas a pagar (De Acordo HE).';
+        break;
+      }
+    }
+  }catch(e){console.warn('fixBmAcumDash:',e)}
+}
 window.roboSetFeriados=function(v){
   ROBO_PARAMS.feriados=String(v||'').split(/[,;]/).map(function(s){return s.trim()}).filter(function(s){return /^\d{2}\/\d{2}\/\d{4}$/.test(s)});
   lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo();rtoast('📅 '+ROBO_PARAMS.feriados.length+' feriados salvos');
@@ -7450,6 +7488,18 @@ function pintRecalcDerivados(corte){
       });
       // (o.laudos é o PLANO baseline mensal do sistema — não sobrescrever; o realizado vai em laudosReal e em D.meses.lr)
       M.forEach(function(o,i){o.real=Math.round(real[i]*100)/100;o.laudosReal=laud[i];o.laudoExc=exc[i]});
+      // ÁREA REALIZADA ACUMULADA = SOMA DE CADA MÊS (regra do cliente: "área realizada é soma de cada mês,
+      // se multiplicar fica errado"). O acumulado do dashboard/One Page/medidor precisa ser IDÊNTICO à soma
+      // do que cada mês mostra — senão "Todos os meses" ≠ Σ(mês a mês). Antes META.m2Real vinha só dos laudos
+      // da meta (metaL, 9.901) e divergia da curva mensal (12.353, meta+fora). Guardamos o recorte só-meta em
+      // m2RealMeta e passamos o acumulado oficial a ser a soma mensal do painel.
+      try{
+        var _somaReal=0;M.forEach(function(o){_somaReal+=(+o.real||0)});
+        _somaReal=Math.round(_somaReal*100)/100;
+        META.m2RealMeta=META.m2Real;      // recorte só-meta (referência)
+        META.m2Real=_somaReal;            // acumulado = Σ meses (régua oficial do cliente)
+        META.m2Total=_somaReal;           // total pintado = mesma soma mensal
+      }catch(e){console.warn('m2Real soma mensal:',e)}
       // DEMANDA DISPONIBILIZADA mensal (m² ajustado por laudo, no mês do término programado):
       // é a régua justa de produtividade — a demanda liberada pela VALE, não a capacidade teórica
       var prog=[0,0,0,0,0,0,0,0,0,0,0,0];
@@ -8185,7 +8235,7 @@ try{
   var _bpOrig=window.buildPintura;
   if(typeof _bpOrig==='function'){window.buildPintura=function(){var r=_bpOrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
   var _ROrig=window.R;
-  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}return r}}
+  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}try{fixBmAcumDash()}catch(e){}return r}}
   var _rbmOrig=window.renderBM;
   if(typeof _rbmOrig==='function'){window.renderBM=function(){var r=_rbmOrig.apply(this,arguments);try{bmAcumAntUI()}catch(e){}return r}}
   setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}},1500);
