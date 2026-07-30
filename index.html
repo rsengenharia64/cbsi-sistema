@@ -6841,6 +6841,42 @@ function bmValorApurado(regs){
 // CARD "BM Acumulado" do Dashboard: deixa de ser placeholder fixo (47% · R$1,94M) e passa a ser o BM REAL =
 // acum. anterior (faturado nas medições passadas, editável na aba BM) + competência APURADA no espelho de ponto
 // (horas a pagar × preço BM). Assim o dashboard reflete o vínculo pedido com a apuração de horas a pagar.
+// PLANEJAMENTO (Motor Inteligente) passa a RESPONDER ao filtro de meses, como o Dashboard.
+// Sem meses (ou 12) = ano inteiro (comportamento original). Com 1..11 meses selecionados:
+//  • "Executado (período)" = Σ realizado dos meses selecionados (antes era sempre o acumulado do ano)
+//  • "Méd. Real/Mês" = média dos meses selecionados
+//  • matriz destaca os meses selecionados e esmaece os demais
+//  • Meta Anual e Projeção Anual continuam ANUAIS por definição (banner explica)
+function fixPlanPeriodo(){
+  try{
+    var plan=document.getElementById('p-plan');if(!plan)return;
+    var sm=(typeof SM!=='undefined')?[].slice.call(SM):[];
+    var nsel=sm.length, parcial=nsel>0&&nsel<12;
+    var old=plan.querySelector('#planPeriodoBanner');if(old)old.remove();
+    var MN=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    // reset visual da matriz (volta ao estado neutro antes de decidir)
+    var tbls=plan.querySelectorAll('table');
+    tbls.forEach(function(tb){[].slice.call(tb.querySelectorAll('tbody tr')).forEach(function(r){var c=r.querySelector('td');if(c&&MN.indexOf((c.textContent||'').trim())>=0){r.style.opacity='';r.style.background='';}})});
+    if(!parcial)return;
+    sm.sort(function(a,b){return a-b});
+    var somaReal=0;sm.forEach(function(m){try{somaReal+=(+em(m).ar||0)}catch(e){}});
+    var meta=(typeof PINT_META!=='undefined')?(+PINT_META.m2Meta||0):0;
+    var pct=meta>0?Math.round(somaReal/meta*100):0;
+    var fmt=function(x){return Math.round(x).toLocaleString('pt-BR')};
+    var rot=sm.map(function(m){return MN[m-1]}).join('+');
+    var ban=document.createElement('div');ban.id='planPeriodoBanner';
+    ban.style.cssText='background:#eaf3fb;border:1px solid #b8d6ef;border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#0a4d80;font-weight:700';
+    ban.innerHTML='📅 Planejamento — período: '+rot+' · <b>Executado</b> e <b>Média/mês</b> refletem os meses selecionados. Meta e Projeção seguem anuais.';
+    plan.insertBefore(ban,plan.firstChild);
+    var kps=plan.querySelectorAll('.kp');
+    [].slice.call(kps).forEach(function(k){var kl=k.querySelector('.kl');if(!kl)return;var t=(kl.textContent||'').trim();
+      if(/Executado Acum/i.test(t)){kl.textContent='Executado (período)';var kv=k.querySelector('.kv');if(kv)kv.textContent=fmt(somaReal);var ks=k.querySelector('.ks');if(ks)ks.textContent=pct+'% da meta anual';var kf=k.querySelector('.kf');if(kf)kf.style.width=Math.min(100,pct)+'%';}
+      else if(/Méd\.?\s*Real\/Mês/i.test(t)){var kv2=k.querySelector('.kv');if(kv2)kv2.textContent=fmt(nsel?somaReal/nsel:0);var ks2=k.querySelector('.ks');if(ks2)ks2.textContent='m² ('+nsel+' '+(nsel>1?'meses':'mês')+' sel.)';}
+    });
+    // destaca meses selecionados na matriz
+    tbls.forEach(function(tb){[].slice.call(tb.querySelectorAll('tbody tr')).forEach(function(r){var c=r.querySelector('td');if(!c)return;var mm=MN.indexOf((c.textContent||'').trim())+1;if(mm>=1&&mm<=12){if(sm.indexOf(mm)>=0){r.style.opacity='1';r.style.background='rgba(46,125,50,.07)';}else{r.style.opacity='.38';r.style.background='';}}})});
+  }catch(e){console.warn('fixPlanPeriodo:',e)}
+}
 // sincroniza qualquer rótulo "baseline NNN laudos" (Planejamento) com a meta viva do painel (laudoMeta)
 function fixBaselineLaudos(){
   try{
@@ -8285,7 +8321,10 @@ try{
   // Planejamento (Motor Inteligente): o card "Meta Anual m²" trazia "baseline 222 laudos" FIXO no código-base.
   // A meta viva do painel é PINT_META.laudoMeta (259) — sincroniza o subtítulo com a mesma fonte das demais abas.
   var _rpOrig=window.renderPlan;
-  if(typeof _rpOrig==='function'){window.renderPlan=function(){var r=_rpOrig.apply(this,arguments);try{fixBaselineLaudos()}catch(e){}return r}}
+  if(typeof _rpOrig==='function'){window.renderPlan=function(){var r=_rpOrig.apply(this,arguments);try{fixBaselineLaudos()}catch(e){}try{fixPlanPeriodo()}catch(e){}return r}}
+  // filtro de meses (TM/SA/SC) só re-renderiza o Dashboard via R(); aqui garantimos que o Planejamento,
+  // se estiver aberto, também seja re-renderizado ao mudar a seleção — daí o fixPlanPeriodo reflete o filtro.
+  ['TM','SA','SC'].forEach(function(fn){var orig=window[fn];if(typeof orig==='function'){window[fn]=function(){var r=orig.apply(this,arguments);try{var pp=document.getElementById('p-plan');if(pp&&pp.offsetParent!==null&&typeof renderPlan==='function')renderPlan();}catch(e){}return r}}});
   setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}},1500);
 }catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
