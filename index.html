@@ -6877,6 +6877,56 @@ function fixPlanPeriodo(){
     tbls.forEach(function(tb){[].slice.call(tb.querySelectorAll('tbody tr')).forEach(function(r){var c=r.querySelector('td');if(!c)return;var mm=MN.indexOf((c.textContent||'').trim())+1;if(mm>=1&&mm<=12){if(sm.indexOf(mm)>=0){r.style.opacity='1';r.style.background='rgba(46,125,50,.07)';}else{r.style.opacity='.38';r.style.background='';}}})});
   }catch(e){console.warn('fixPlanPeriodo:',e)}
 }
+// RANKING sincronizado com o ESPELHO DE PONTO (ROBO_LANC), filtrado por mês.
+// Estratégia sem reescrever HTML: monta um "overlay" do efetivo (mesmos campos do EF) a partir da apuração
+// real dos meses selecionados, troca o conteúdo de EF temporariamente, deixa o renderRank base montar tudo
+// (podium, scores, top10) e restaura o EF. Fallback: sem espelho importado → mantém o cadastro original.
+function _rankMes(s){s=String(s||'');var p=s.split('/');if(p.length>=2){var m=parseInt(p[1]);if(m>=1&&m<=12)return m}var q=s.split('-');if(q.length>=2){var m2=parseInt(q[1]);if(m2>=1&&m2<=12)return m2}return 0}
+function _rankMesesSel(){try{var sm=(typeof SM!=='undefined')?Array.from(SM):[];if(!sm.length||sm.length>=12)return null;return sm}catch(e){return null}}
+function buildRankEF(){
+  try{
+    if(typeof ROBO_LANC==='undefined'||!ROBO_LANC.length)return null;
+    var meses=_rankMesesSel();
+    var by={};
+    ROBO_LANC.forEach(function(l){
+      var mm=_rankMes(l.data);if(meses&&meses.indexOf(mm)<0)return;
+      var key=l.mat||l.id||l.nome;if(!key)return;
+      var c=by[key]||(by[key]={m:l.mat||'',n:l.nome||'',f:l.funcQQP||l.cargo||'',cargo:l.cargo||'',hn:0,he:0,adn:0,_d:{}});
+      c.hn+=(+l.hn||0);c.he+=(+l.he50||0)+(+l.he100||0)+(+l.he150||0);c.adn+=(+l.adn||0);
+      if(l.data)c._d[l.data]=1;
+    });
+    var efBy={};try{EF.forEach(function(e){if(e&&e.m)efBy[e.m]=e})}catch(e){}
+    var discOf=function(c){var e=efBy[c.m];if(e&&e.d)return e.d;var t=((c.f||'')+' '+(c.cargo||'')).toUpperCase();
+      if(/PINTU|PINTOR/.test(t))return 'PIN';if(/ANDAIM|MONTADOR/.test(t))return 'AND';
+      if(/ALPIN|CORDA|ACESSO POR/.test(t))return 'ALP';if(/MEC[ÂA]NIC|CALDEIR|SOLDAD/.test(t))return 'MEC';return ''};
+    var out=[];Object.keys(by).forEach(function(k){var c=by[k];out.push({m:c.m,n:c.n,f:c.f,d:discOf(c),
+      hn:Math.round(c.hn*10)/10,he:Math.round(c.he*10)/10,adn:Math.round(c.adn*10)/10,di:Object.keys(c._d).length,st:'ativo'})});
+    return out.length?out:null;
+  }catch(e){console.warn('buildRankEF:',e);return null}
+}
+function fixRankPeriodo(overlay){
+  try{
+    var rk=document.getElementById('p-rank');if(!rk)return;
+    var MN=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    var meses=_rankMesesSel();
+    var rot=meses?meses.slice().sort(function(a,b){return a-b}).map(function(m){return MN[m-1]}).join('+'):'Ano inteiro';
+    // corrige o rótulo "Período: ..." (o base tem bug e mostra sempre "Jan-Mar")
+    var els=rk.querySelectorAll('div,span');
+    for(var i=0;i<els.length;i++){var el=els[i];if(el.children.length)continue;var t=el.textContent||'';
+      if(/Período:\s*/.test(t)&&/(colaboradores|Espelho|\/\d{2,4})/i.test(t)){el.textContent=t.replace(/Período:[^·]*/,'Período: '+rot+' ');}
+    }
+    var old=rk.querySelector('#rankFonteBanner');if(old)old.remove();
+    var ban=document.createElement('div');ban.id='rankFonteBanner';
+    if(overlay){
+      ban.style.cssText='background:#eaf7f0;border:1px solid #b7e0c8;border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#0a5d34;font-weight:700';
+      ban.innerHTML='🔗 Ranking calculado do <b>Espelho de Ponto</b> (apuração real) · período: '+rot+' · '+overlay.length+' colaboradores com apuração.';
+    }else{
+      ban.style.cssText='background:#fdf3e7;border:1px solid #eccfa6;border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#8a5a12;font-weight:700';
+      ban.innerHTML='⚠️ Nenhum espelho de ponto importado — exibindo o cadastro de efetivo. Importe os espelhos (Drive/Espelho Ponto) para o ranking refletir a apuração real.';
+    }
+    rk.insertBefore(ban,rk.firstChild);
+  }catch(e){console.warn('fixRankPeriodo:',e)}
+}
 // EVOLUÇÃO ATUAL — injeta no Cronograma de Desenvolvimento as entregas desta rodada (fonte painel + coerência),
 // sem tocar o código-base: adiciona um card de fase e atualiza os contadores (Total/Implementadas/Progresso).
 var DEV_EVO_ITENS=[
@@ -8369,9 +8419,25 @@ try{
   // Cronograma de Desenvolvimento: injeta a fase "Evolução Atual" e atualiza os contadores a cada render.
   var _bdOrig=window.buildDev;
   if(typeof _bdOrig==='function'){window.buildDev=function(){var r=_bdOrig.apply(this,arguments);try{fixDevRoadmap()}catch(e){}return r}}
+  // Ranking: troca EF pela apuração real do espelho (meses selecionados), deixa o base renderizar e restaura.
+  var _rrOrig=window.renderRank;
+  if(typeof _rrOrig==='function'){window.renderRank=function(){
+    var overlay=null;try{overlay=buildRankEF()}catch(e){}
+    var r;
+    if(overlay&&typeof EF!=='undefined'){
+      var backup=null;try{backup=EF.slice()}catch(e){}
+      try{EF.length=0;overlay.forEach(function(e){EF.push(e)});}catch(e){}
+      try{r=_rrOrig.apply(this,arguments)}finally{if(backup){try{EF.length=0;backup.forEach(function(e){EF.push(e)})}catch(e){}}}
+    }else{r=_rrOrig.apply(this,arguments)}
+    try{fixRankPeriodo(overlay)}catch(e){}
+    return r;
+  }}
   // filtro de meses (TM/SA/SC) só re-renderiza o Dashboard via R(); aqui garantimos que o Planejamento,
   // se estiver aberto, também seja re-renderizado ao mudar a seleção — daí o fixPlanPeriodo reflete o filtro.
-  ['TM','SA','SC'].forEach(function(fn){var orig=window[fn];if(typeof orig==='function'){window[fn]=function(){var r=orig.apply(this,arguments);try{var pp=document.getElementById('p-plan');if(pp&&pp.offsetParent!==null&&typeof renderPlan==='function')renderPlan();}catch(e){}return r}}});
+  ['TM','SA','SC'].forEach(function(fn){var orig=window[fn];if(typeof orig==='function'){window[fn]=function(){var r=orig.apply(this,arguments);
+    try{var pp=document.getElementById('p-plan');if(pp&&pp.offsetParent!==null&&typeof renderPlan==='function')renderPlan();}catch(e){}
+    try{var rk=document.getElementById('p-rank');if(rk&&rk.offsetParent!==null&&typeof renderRank==='function')renderRank();}catch(e){}
+    return r}}});
   setTimeout(function(){try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}},1500);
 }catch(e){console.warn('Pint snapshot:',e)}
 // primeira renderização
