@@ -7461,17 +7461,28 @@ function pintRecalcDerivados(corte){
         prog[mm-1]+=m2;
       });
       M.forEach(function(o,i){o.prog=Math.round(prog[i]*100)/100});
-      // RETROALIMENTAÇÃO → módulo de Lançamento (D.meses): o realizado mensal de pintura
-      // passa a vir da planilha oficial (área realizada + laudos realizados por mês).
-      // É isso que alimenta os cartões "LAUDOS MÊS / ÁREA MÊS", o gráfico Previsto×Realizado
-      // do Dashboard e o One Page — antes paravam em fevereiro (entrada manual).
+      // META MENSAL OFICIAL DO PAINEL: laudos e m² PREVISTOS por mês vêm da BASELINE de cada laudo
+      // (data-fim baseline dfBL). A soma de m² por dfBL bate com a meta anual do painel — logo é a régua
+      // correta. Antes o "plano mensal de laudos" era um hardcode na base que não vinha do painel.
+      var ldMeta=[0,0,0,0,0,0,0,0,0,0,0,0],m2Meta=[0,0,0,0,0,0,0,0,0,0,0,0];
+      L.forEach(function(l){
+        if(l.st==='CANCELADO')return;
+        var mm=parseInt(String(l.dfBL||l.dfProg||'').split('/')[1]);
+        if(!(mm>=1&&mm<=12))return;
+        ldMeta[mm-1]++;m2Meta[mm-1]+=(+l.m2a||+l.m2l||0);
+      });
+      M.forEach(function(o,i){o.laudos=ldMeta[i];o.m2meta=Math.round(m2Meta[i]*100)/100});
+      // RETROALIMENTAÇÃO → módulo de Lançamento (D.meses): realizado E previsto mensais vêm do PAINEL.
+      // Alimenta "LAUDOS MÊS / ÁREA MÊS", o gráfico Previsto×Realizado e o One Page.
       try{
         var anoAtual=2026;try{if(typeof Y!=='undefined')anoAtual=Y}catch(e){}
         if(typeof em==='function'&&anoAtual===2026){ // laudos são de 2026 — não contaminar outros anos
           for(var mi=1;mi<=12;mi++){
             var o2=em(mi);
-            o2.ar=Math.round(real[mi-1]*100)/100;
-            o2.lr=laud[mi-1];
+            o2.ar=Math.round(real[mi-1]*100)/100;   // área realizada (painel)
+            o2.lr=laud[mi-1];                         // laudos realizados (painel)
+            o2.lp=ldMeta[mi-1];                       // laudos PREVISTOS (painel — baseline dfBL)
+            o2.ap=Math.round(m2Meta[mi-1]*100)/100;   // m² PREVISTO/meta do mês (painel — baseline dfBL)
           }
         }
       }catch(e){console.warn('retroalimentação D.meses:',e)}
