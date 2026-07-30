@@ -7896,7 +7896,7 @@ function drivePontoAuto(files){
       }).catch(function(e){console.warn('Drive ponto:',f.name,e)});
     });
   });
-  if(novos)seq.then(function(){renderRobo();rtoast('☁️ Robô de Ponto: '+novos+' PDF(s) novos do Drive processados')});
+  if(novos)seq.then(function(){renderRobo();try{if(typeof R==='function')R()}catch(e){}/* refaz o dashboard p/ o card BM Acumulado refletir a apuração recém-importada do espelho */rtoast('☁️ Robô de Ponto: '+novos+' PDF(s) novos do Drive processados')});
 }
 // ---- importação automática do conteúdo (BMS e Pintura) ----
 function acharUltimoXlsx(files,regex){
@@ -8268,6 +8268,9 @@ try{fixMetricasJornada()}catch(e){}
 try{aplicarDeAcordoHE()}catch(e){console.warn('DeAcordoHE init:',e)}
 try{renderRobo()}catch(e){console.warn('Robo init:',e)}
 try{driveAutoStart()}catch(e){console.warn('DriveAuto:',e)}
+// refaz o dashboard logo após o boot para que os fixes do addon (card BM Acumulado, área, período)
+// apliquem sobre a 1ª renderização — a render inicial do sistema-base ocorre antes do wrapper de R().
+try{setTimeout(function(){try{if(typeof R==='function')R()}catch(e){}},1500)}catch(e){}
 // PROPAGAÇÃO AUTOMÁTICA DE REGRA: se a regra de cálculo mudou desde a última abertura
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
