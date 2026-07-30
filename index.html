@@ -7658,11 +7658,11 @@ function fixDashPeriodo(){
     }catch(e){}
     // BLOCO "PINTURA — DADOS REAIS": LAUDOS e M² EXEC passam a ser do período
     try{
-      var dr=[].slice.call(dash.querySelectorAll('.cd')).find(function(c){return c.textContent.indexOf('DADOS REAIS')>=0});
+      var dr=[].slice.call(dash.querySelectorAll('.cd')).find(function(c){return /dados reais/i.test(c.textContent)});
       if(dr){[].slice.call(dr.querySelectorAll('div')).forEach(function(d){
         if(d.children.length!==2)return;var big=d.children[0],small=d.children[1];var st=small.textContent;
-        if(/LAUDOS/.test(st)&&/%/.test(st))big.textContent=agg.lr+'/'+agg.lp;
-        else if(/M² EXEC/.test(st))big.textContent=_pdFmt(agg.ar);
+        if(/LAUDOS/i.test(st)&&/%/.test(st))big.textContent=agg.lr+'/'+agg.lp;
+        else if(/M² EXEC/i.test(st))big.textContent=_pdFmt(agg.ar);
       });}
     }catch(e){}
   }catch(e){console.warn('fixDashPeriodo:',e)}
