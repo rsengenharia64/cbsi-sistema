@@ -7195,6 +7195,29 @@ function fixDashHardcodes(){
     if(g5&&nTac>0){var els=g5.querySelectorAll('*');for(var j=0;j<els.length;j++){var e=els[j];if(e.children.length)continue;if(/^\s*\d+\s*paradas\s*$/.test(e.textContent||'')){e.textContent=nTac+' paradas';}}}
   }catch(e){console.warn('fixDashHardcodes:',e)}
 }
+// P6 — DATA DE CORTE ÚNICA E VIVA: os estados TAC (Realizadas/Em Curso/Programadas) usavam a data fixa
+// 26/03/2026 na base em modo "Ano" e a data de HOJE só no modo parcial (via fixDashPeriodo). Aqui garantimos
+// que o modo Ano/zero também use HOJE — referência temporal única em todas as seleções.
+function fixTACHoje(){
+  try{
+    var dash=document.getElementById('p-dash');if(!dash||typeof PARADAS==='undefined')return;
+    var sm=(typeof SM!=='undefined')?Array.from(SM):[];
+    var parcial=sm.length>0&&sm.length<12;
+    if(parcial)return; // parcial já é tratado por fixDashPeriodo com a data de hoje
+    var hoje=new Date(new Date().toDateString());
+    var tac=PARADAS.filter(function(p){return p.e==='TAC'});
+    var done=tac.filter(function(p){var d=new Date(p.f);return !isNaN(d)&&d<hoje}).length;
+    var act=tac.filter(function(p){var i=new Date(p.i),f=new Date(p.f);return !isNaN(i)&&!isNaN(f)&&i<=hoje&&f>=hoje}).length;
+    var plan=tac.filter(function(p){var i=new Date(p.i);return !isNaN(i)&&i>hoje}).length;
+    var pctD=tac.length?Math.round(done/tac.length*100):0;
+    var ano=(typeof Y!=='undefined')?Y:2026;
+    _pdSetCard(dash,'Paradas TAC Ano',String(tac.length),'Jan a Dez '+ano);
+    _pdSetCard(dash,'Realizadas',String(done),pctD+'% concluído');
+    _pdSetCard(dash,'Em Curso',String(act),'em execução agora');
+    _pdSetCard(dash,'Programadas',String(plan),'a executar');
+    _pdSetCard(dash,'Avanço Geral',pctD+'%',null);
+  }catch(e){console.warn('fixTACHoje:',e)}
+}
 function fixBmAcumDash(){
   try{
     var totalContrato=4140037.11;
@@ -8641,7 +8664,7 @@ try{
   var _bpOrig=window.buildPintura;
   if(typeof _bpOrig==='function'){window.buildPintura=function(){var r=_bpOrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
   var _ROrig=window.R;
-  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}try{fixBmAcumDash()}catch(e){}try{fixDashHardcodes()}catch(e){}return r}}
+  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}try{fixBmAcumDash()}catch(e){}try{fixDashHardcodes()}catch(e){}try{fixTACHoje()}catch(e){}return r}}
   // ZERO-SELEÇÃO = ANO INTEIRO nas abas que ficavam EM BRANCO com nenhum mês selecionado (Impactos e Mapa de
   // Paradas). Convenção já usada no Dashboard ("nenhum mês → ano inteiro"); aqui estendida às abas da base.
   var _giOrig=window.getImp;
