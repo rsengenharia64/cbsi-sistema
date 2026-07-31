@@ -6904,6 +6904,80 @@ function buildRankEF(){
     return out.length?out:null;
   }catch(e){console.warn('buildRankEF:',e);return null}
 }
+// RANKING recalibrado (P7): score que DIFERENCIA com dados reais. A fórmula-base (÷26) saturava tudo em 100.
+// Novo score = Assiduidade(35%) + Produtividade/dia(30%) + Comprometimento HE(25%) + Segurança(10%).
+var _rankBaseRender=null;
+function rankRenderNovo(overlay){
+  try{
+    var rk=document.getElementById('p-rank');if(!rk||!overlay||!overlay.length)return false;
+    var _fm=(typeof fm==='function')?fm:function(x){return Math.round(x).toLocaleString('pt-BR')};
+    var dN={PIN:'Pintura',AND:'Andaime',ALP:'Alpinismo',MEC:'Mecânica'};
+    var dI={PIN:'🎨',AND:'🏗️',ALP:'🧗',MEC:'🔧'};
+    var dC={PIN:'var(--co)',AND:'var(--cs)',ALP:'var(--ca)',MEC:'var(--gn)'};
+    var dG={PIN:'linear-gradient(135deg,#d95727,#e87740)',AND:'linear-gradient(135deg,#07456c,#0a6e9e)',ALP:'linear-gradient(135deg,#cc8800,#e6a020)',MEC:'linear-gradient(135deg,#00a070,#00c48c)'};
+    var medals=['🥇','🥈','🥉',''];
+    // KPIs gerais
+    var totalHN=0,totalHE=0,totalDias=0,totalADN=0;
+    overlay.forEach(function(c){totalHN+=(+c.hn||0);totalHE+=(+c.he||0);totalDias+=(+c.di||0);if((+c.adn||0)>0)totalADN++;});
+    var n=overlay.length,presGeral=n>0?Math.round((n-totalADN)/n*100):0;
+    // por disciplina
+    var agg={};overlay.forEach(function(c){var d=c.d;if(!dN[d])return;var a=agg[d]||(agg[d]={d:d,n:0,hn:0,he:0,adnc:0,di:0});a.n++;a.hn+=(+c.hn||0);a.he+=(+c.he||0);a.di+=(+c.di||0);if((+c.adn||0)>0)a.adnc++;});
+    var discs=Object.keys(agg).map(function(k){return agg[k]});
+    if(!discs.length)return false;
+    var maxAssid=0;discs.forEach(function(a){var p=a.n?a.di/a.n:0;if(p>maxAssid)maxAssid=p;});
+    discs.forEach(function(a){
+      a.hnMedia=a.n?Math.round(a.hn/a.n*10)/10:0; a.heTotal=Math.round(a.he*10)/10;
+      a.pres=a.n?Math.round((a.n-a.adnc)/a.n*100):0; a.semADN=a.n?Math.round((a.n-a.adnc)/a.n*100):0;
+      var prodDia=a.di>0?a.hn/a.di:0, heRatio=a.hn>0?a.he/a.hn:0, assidPer=a.n?a.di/a.n:0;
+      var sProd=Math.min(100,Math.round(prodDia/8.8*100));
+      var sHE=Math.min(100,Math.round(heRatio/0.20*100));   // 20% de HE = nota cheia de comprometimento
+      var sAssid=maxAssid>0?Math.min(100,Math.round(assidPer/maxAssid*100)):0;
+      var sSeg=a.adnc>0?Math.max(0,100-a.adnc*3):100;
+      a.score=Math.round(sAssid*0.35+sProd*0.30+sHE*0.25+sSeg*0.10);
+      a.nome=dN[a.d];a.icon=dI[a.d];a.color=dC[a.d];a.grad=dG[a.d];
+    });
+    discs.sort(function(x,y){return y.score-x.score});
+    // top10
+    var t10P=overlay.filter(function(e){return(+e.adn||0)===0}).sort(function(a,b){return (b.he-a.he)||(b.hn-a.hn)}).slice(0,10);
+    var t10H=overlay.filter(function(e){return(+e.he||0)>0}).sort(function(a,b){return b.he-a.he}).slice(0,10);
+    var efADN=overlay.filter(function(e){return(+e.adn||0)>0}).sort(function(a,b){return b.adn-a.adn});
+    var MN=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    var meses=(function(){try{var sm=(typeof SM!=='undefined')?Array.from(SM):[];return(!sm.length||sm.length>=12)?null:sm}catch(e){return null}})();
+    var periodoTxt='Período: '+(meses?meses.slice().sort(function(a,b){return a-b}).map(function(m){return MN[m-1]}).join('+'):'Ano inteiro');
+    var discBg={PIN:'rgba(217,87,39,.1)',AND:'rgba(0,173,249,.1)',ALP:'rgba(255,173,0,.1)',MEC:'rgba(0,196,140,.1)'};
+    var discTx={PIN:'var(--co)',AND:'var(--cs)',ALP:'var(--ca)',MEC:'var(--gn)'};
+    function discBadge(d){return '<span style="font-size:7px;font-weight:700;padding:1px 4px;border-radius:4px;background:'+(discBg[d]||'rgba(0,0,0,.05)')+';color:'+(discTx[d]||'var(--dm)')+'">'+d+'</span>';}
+    var html='<div class="cd" style="position:relative;border-top:3px solid var(--ca)">'
+      +'<button class="fs-btn" onclick="toggleFullscreen(this)"></button>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><div style="font-size:12px;font-weight:900;color:var(--ca)">🏆 RANKING DE EQUIPES — DESTAQUE PRODUÇÃO, PRODUTIVIDADE E SEGURANÇA</div></div><div style="font-size:8px;color:var(--dm)">'+periodoTxt+' · Espelho Ponto · '+n+' colaboradores</div></div>'
+      +'<div class="g g5" style="margin-bottom:8px">'
+      +'<div class="kp" style="border-top:2px solid var(--gn)"><div class="kl">Presença Geral</div><div class="kv" style="color:var(--gn)">'+presGeral+'%</div><div class="ks">'+(n-totalADN)+'/'+n+' sem ADN</div></div>'
+      +'<div class="kp" style="border-top:2px solid var(--cs)"><div class="kl">HN Total Produtiva</div><div class="kv" style="color:var(--cs)">'+_fm(Math.round(totalHN))+'</div><div class="ks">horas normais</div></div>'
+      +'<div class="kp" style="border-top:2px solid var(--ca)"><div class="kl">HE Total</div><div class="kv" style="color:var(--ca)">'+(Math.round(totalHE*10)/10)+'</div><div class="ks">horas extras</div></div>'
+      +'<div class="kp" style="border-top:2px solid var(--co)"><div class="kl">Dias Trabalhados</div><div class="kv" style="color:var(--co)">'+totalDias+'</div><div class="ks">total equipe produtiva</div></div>'
+      +'<div class="kp" style="border-top:2px solid '+(totalADN===0?'var(--gn)':'var(--rd)')+'"><div class="kl">Ad. Noturno</div><div class="kv" style="color:'+(totalADN===0?'var(--gn)':'var(--ca)')+'">'+totalADN+'</div><div class="ks">colab. c/ ADN</div></div>'
+      +'</div></div>'
+      +'<div class="cd" style="position:relative"><button class="fs-btn" onclick="toggleFullscreen(this)"></button>'
+      +'<div style="font-size:10px;font-weight:900;color:var(--ca);margin-bottom:2px">🏆 RANKING POR DISCIPLINA — SCORE COMPOSTO</div>'
+      +'<div style="font-size:7px;color:var(--dm);margin-bottom:12px">Score = Assiduidade (35%) + Produtividade/dia (30%) + Comprometimento HE (25%) + Segurança (10%) · calibrado para dados reais do espelho</div>'
+      +'<div style="display:flex;justify-content:center;gap:20px;align-items:flex-end;margin-bottom:12px">'
+      +discs.map(function(d,i){var h=i===0?140:i===1?120:i===2?100:80;return '<div style="text-align:center"><div style="font-size:16px">'+(medals[i]||'')+'</div><div style="width:130px;height:'+h+'px;background:'+d.grad+';border-radius:8px 8px 0 0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px"><div style="font-size:20px;margin-bottom:4px">'+d.icon+'</div><div style="font-size:12px;font-weight:900;color:#fff">'+d.nome+'</div><div style="font-size:24px;font-weight:900;color:#fff">'+d.score+'<span style="font-size:10px">pts</span></div><div style="font-size:8px;color:rgba(255,255,255,.7)">'+d.n+' colaboradores</div></div><div style="font-size:8px;font-weight:700;color:var(--dm);margin-top:2px">'+(i+1)+'º LUGAR</div></div>';}).join('')
+      +'</div>'
+      +'<div class="g g2" style="margin-bottom:6px">'
+      +discs.map(function(d,i){return '<div class="kp" style="border-left:3px solid '+d.color+';padding:8px"><div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">'+d.icon+'</span><span style="font-size:11px;font-weight:800;color:var(--tx)">'+d.nome+'</span>'+(medals[i]?'<span style="font-size:12px">'+medals[i]+'</span>':'')+'</div><span style="font-size:18px;font-weight:900;color:'+d.color+'">'+d.score+'<span style="font-size:9px">pts</span></span></div><div class="g g4" style="margin-top:6px"><div><div style="font-size:7px;color:var(--dm);text-transform:uppercase">Assiduidade</div><div style="font-size:12px;font-weight:900;color:'+d.color+'">'+(d.n?Math.round(d.di/d.n):0)+'d/pes</div></div><div><div style="font-size:7px;color:var(--dm);text-transform:uppercase">HN/dia</div><div style="font-size:12px;font-weight:900;color:var(--tx)">'+(d.di>0?Math.round(d.hn/d.di*10)/10:0)+'</div></div><div><div style="font-size:7px;color:var(--dm);text-transform:uppercase">HE Total</div><div style="font-size:12px;font-weight:900;color:var(--ca)">'+d.heTotal+'</div></div><div><div style="font-size:7px;color:var(--dm);text-transform:uppercase">HE/HN</div><div style="font-size:12px;font-weight:900;color:'+d.color+'">'+(d.hn>0?Math.round(d.he/d.hn*100):0)+'%</div></div></div><div style="height:3px;background:rgba(0,0,0,.04);border-radius:2px;margin-top:4px"><div style="height:100%;width:'+Math.min(100,d.score)+'%;background:'+d.color+';border-radius:2px"></div></div></div>';}).join('')
+      +'</div></div>'
+      +'<div class="g g2">'
+      +'<div class="cd" style="position:relative"><button class="fs-btn" onclick="toggleFullscreen(this)"></button><div style="font-size:9px;font-weight:800;color:var(--gn)">⭐ TOP 10 PRESENÇA — sem ADN, por HE/HN</div><table class="dt" style="margin-top:4px"><thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Disc</th><th>HN</th><th>HE</th></tr></thead><tbody>'
+      +t10P.map(function(e,i){return '<tr><td style="font-size:11px;font-weight:900">'+(i<3?medals[i]:(i+1))+'</td><td style="font-weight:700;text-transform:uppercase;font-size:8px">'+e.n+'</td><td style="font-size:7px;color:var(--dm)">'+e.f+'</td><td>'+discBadge(e.d)+'</td><td style="text-align:center;font-weight:700">'+Math.round(e.hn)+'</td><td style="text-align:center;font-weight:700;color:var(--ca)">'+Math.round(e.he*10)/10+'</td></tr>';}).join('')
+      +'</tbody></table></div>'
+      +'<div class="cd" style="position:relative"><button class="fs-btn" onclick="toggleFullscreen(this)"></button><div style="font-size:9px;font-weight:800;color:var(--ca)">💪 TOP 10 COMPROMETIMENTO — HORAS EXTRAS</div><table class="dt" style="margin-top:4px"><thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Disc</th><th>HE</th><th>HN</th></tr></thead><tbody>'
+      +t10H.map(function(e,i){return '<tr><td style="font-size:11px;font-weight:900">'+(i<3?medals[i]:(i+1))+'</td><td style="font-weight:700;text-transform:uppercase;font-size:8px">'+e.n+'</td><td style="font-size:7px;color:var(--dm)">'+e.f+'</td><td>'+discBadge(e.d)+'</td><td style="text-align:center;font-weight:900;color:var(--ca)">'+Math.round(e.he*10)/10+'h</td><td style="text-align:center">'+Math.round(e.hn)+'</td></tr>';}).join('')
+      +'</tbody></table></div></div>'
+      +(efADN.length?('<div class="cd" style="position:relative;border-left:3px solid var(--rd)"><button class="fs-btn" onclick="toggleFullscreen(this)"></button><div style="font-size:9px;font-weight:800;color:var(--rd);margin-bottom:4px">⚠ COLABORADORES COM ADICIONAL NOTURNO (ADN)</div><table class="dt"><thead><tr><th>Colaborador</th><th>Função</th><th>Disc</th><th>ADN(h)</th><th>HN</th></tr></thead><tbody>'+efADN.map(function(e){return '<tr><td style="font-weight:700;text-transform:uppercase;font-size:8px">'+e.n+'</td><td style="font-size:7px">'+e.f+'</td><td>'+discBadge(e.d)+'</td><td style="text-align:center;font-weight:900;color:var(--ca)">'+Math.round(e.adn*10)/10+'</td><td style="text-align:center">'+Math.round(e.hn)+'</td></tr>';}).join('')+'</tbody></table></div>'):'');
+    rk.innerHTML=html;
+    return true;
+  }catch(e){console.warn('rankRenderNovo:',e);return false}
+}
 function fixRankPeriodo(overlay){
   try{
     var rk=document.getElementById('p-rank');if(!rk)return;
@@ -8588,16 +8662,19 @@ try{
   if(typeof _bdOrig==='function'){window.buildDev=function(){var r=_bdOrig.apply(this,arguments);try{fixDevRoadmap()}catch(e){}return r}}
   // Ranking: troca EF pela apuração real do espelho (meses selecionados), deixa o base renderizar e restaura.
   var _rrOrig=window.renderRank;
-  if(typeof _rrOrig==='function'){window.renderRank=function(){
+  if(typeof _rrOrig==='function'){_rankBaseRender=_rrOrig;window.renderRank=function(){
     var overlay=null;try{overlay=buildRankEF()}catch(e){}
-    var r;
-    if(overlay&&typeof EF!=='undefined'){
+    if(overlay){
+      var ok=false;try{ok=rankRenderNovo(overlay)}catch(e){}   // P7: render recalibrado direto do espelho
+      if(ok){try{fixRankPeriodo(overlay)}catch(e){}return true;}
+      // fallback: EF-swap + render base
       var backup=null;try{backup=EF.slice()}catch(e){}
       try{EF.length=0;overlay.forEach(function(e){EF.push(e)});}catch(e){}
-      try{r=_rrOrig.apply(this,arguments)}finally{if(backup){try{EF.length=0;backup.forEach(function(e){EF.push(e)})}catch(e){}}}
-    }else{r=_rrOrig.apply(this,arguments)}
-    try{fixRankPeriodo(overlay)}catch(e){}
-    return r;
+      var r;try{r=_rrOrig.apply(this,arguments)}finally{if(backup){try{EF.length=0;backup.forEach(function(e){EF.push(e)})}catch(e){}}}
+      try{fixRankPeriodo(overlay)}catch(e){}
+      return r;
+    }
+    var r2=_rrOrig.apply(this,arguments);try{fixRankPeriodo(null)}catch(e){}return r2;
   }}
   // filtro de meses (TM/SA/SC) só re-renderiza o Dashboard via R(); aqui garantimos que o Planejamento,
   // se estiver aberto, também seja re-renderizado ao mudar a seleção — daí o fixPlanPeriodo reflete o filtro.
