@@ -6981,6 +6981,86 @@ function fixBaselineLaudos(){
     }
   }catch(e){console.warn('fixBaselineLaudos:',e)}
 }
+// BOLETIM DE MEDIÇÃO reescrito para COMPETÊNCIA REAL (P1). O renderBM base só entendia Jan/Fev
+// (isMed1/isMed1A) → mostrava zeros para Jul/Ago. Agora: itens HH = apuração AO VIVO da competência
+// selecionada (janela 21→20 do Robô), VB/VM/SV = quantidade manual (nm), acum. anterior EDITÁVEL,
+// período e data dinâmicos. Em qualquer erro, cai no render base.
+var _bmBaseRender=null;
+function bmRenderNovo(){
+  try{
+    var BMv=(typeof getBM==='function')?getBM():BM;
+    if(!BMv||!BMv.length){if(_bmBaseRender)return _bmBaseRender();return;}
+    var _fm=(typeof fm==='function')?fm:function(x){return Math.round(x).toLocaleString('pt-BR')};
+    var _fR=(typeof fR==='function')?fR:function(x){return (+x||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})};
+    var _fd=(typeof fd==='function')?fd:function(x,d){return (+x||0).toLocaleString('pt-BR',{minimumFractionDigits:d||1,maximumFractionDigits:d||1})};
+    var totalContrato=4140037.11;
+    var acumAnt=(+localStorage.getItem('cbsi-v15-bm-acumant'));if(!(acumAnt>0))acumAnt=1608423.72;
+    // competência selecionada (janela 21→20) + apuração HH ao vivo
+    var FA=null;try{FA=roboFiltroAtivo()}catch(e){}
+    var compLabel='—',periodo='Competência atual',temPonto=false,liveQty={};
+    if(FA){
+      compLabel=FA.rotulo||'—';
+      if(FA.periodos&&FA.periodos.length)periodo=FA.periodos.map(function(p){return p.desc}).join(' | ');
+      try{
+        var con=roboConsolidaRegs(FA.regs||[]);
+        Object.keys(con.porFunc).forEach(function(f){
+          if(f.indexOf('(sem De×Para')===0)return;var a=con.porFunc[f];
+          [['HN',a.hn],['HE50',a.he50],['HE100',a.he100],['HE150',a.he150],['ADN',a.adn]].forEach(function(par){
+            var it=bmItemDe(f,par[0]);if(it)liveQty[it.it]=(liveQty[it.it]||0)+(+par[1]||0);
+          });
+        });
+        temPonto=(FA.regs&&FA.regs.length>0)&&Object.keys(liveQty).length>0;
+      }catch(e){}
+    }
+    var totalMes=0;
+    var rows=BMv.map(function(i){
+      var q;
+      if(i.t==='HH'){q=temPonto?(liveQty[i.it]||0):(+i.nm||0);}   // HH: apuração viva da competência
+      else{q=(+i.nm||0);}                                          // VB/VM/SV: quantidade manual
+      var v=q*(+i.pu||0);totalMes+=v;return{i:i,q:q,v:v};
+    });
+    var totalAcum=acumAnt+totalMes, saldo=totalContrato-totalAcum;
+    var execPct=totalContrato>0?(totalAcum/totalContrato*100).toFixed(1):'0';
+    var byT=function(t){return rows.filter(function(r){return r.i.t===t}).reduce(function(s,r){return s+r.v},0)};
+    var hhVal=byT('HH'),vbVal=byT('VB'),vmVal=byT('VM'),svVal=byT('SV');
+    var pctT=function(v){return totalMes>0?Math.round(v/totalMes*100):0};
+    var cnt=function(t){return BMv.filter(function(i){return i.t===t}).length};
+    var hoje=(function(){try{return new Date().toLocaleDateString('pt-BR')}catch(e){return ''}})();
+    var fonteNota=temPonto?('Fonte HH: Espelho de Ponto — '+compLabel):(FA&&(!FA.regs||!FA.regs.length)?'⚠️ Sem espelho de ponto na competência — importe/aplique o ponto':'Quantidades atuais do BM');
+    var rowsHTML=rows.map(function(r){var i=r.i;var tc=i.t==='HH'?'bm-hh':i.t==='VB'?'bm-vb':i.t==='VM'?'bm-vm':'bm-sv';var valAc=r.v;
+      return '<tr><td>'+i.it+'</td><td style="text-align:left;max-width:180px;font-size:8px">'+i.d+'</td><td><span class="bm-type '+tc+'">'+(i.t==='VM'?'VB/M':i.t)+'</span></td><td>'+i.u+'</td><td>'+_fR(i.pu)+'</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:'+(r.q>0?'var(--cs)':'var(--dm)')+'">'+_fd(r.q,2)+'</td><td>'+_fd(r.q,2)+'</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:'+(r.v>0?'var(--gn)':'var(--dm)')+'">'+_fR(r.v)+'</td><td>'+_fR(valAc)+'</td><td style="color:'+(valAc>0?'var(--rd)':'var(--dm)')+'">'+_fR(-valAc)+'</td></tr>';
+    }).join('');
+    document.getElementById('p-bm').innerHTML=
+     '<div class="g g5" style="margin-bottom:6px">'
+    +'<div class="kp"><div class="kl">Valor Mês ('+compLabel+')</div><div class="kv" style="color:var(--cs);font-size:16px">R$ '+_fm(totalMes)+'</div><div class="ks">'+periodo+'</div></div>'
+    +'<div class="kp"><div class="kl">Acumulado Anterior</div><div class="kv" style="color:var(--dm);font-size:16px">R$ '+_fm(acumAnt)+'</div><div class="ks">editável (medições anteriores)</div></div>'
+    +'<div class="kp"><div class="kl">Total Acumulado</div><div class="kv" style="color:var(--ca);font-size:16px">R$ '+_fm(totalAcum)+'</div><div class="ks">'+compLabel+'</div></div>'
+    +'<div class="kp"><div class="kl">Contrato</div><div class="kv" style="color:var(--dm);font-size:16px">R$ '+_fm(totalContrato)+'</div><div class="ks">5900117444</div></div>'
+    +'<div class="kp"><div class="kl">Saldo</div><div class="kv" style="color:'+(saldo>0?'var(--gn)':'var(--rd)')+';font-size:16px">R$ '+_fm(saldo)+'</div><div class="ks">Exec: '+execPct+'%</div><div class="kb"><div class="kf" style="width:'+Math.min(execPct,100)+'%;background:var(--ca)"></div></div></div>'
+    +'</div>'
+    +'<div class="g g4" style="margin-bottom:6px">'
+    +'<div class="kp" style="border-left:3px solid var(--cs)"><div class="kl">HH — Homem-Hora</div><div class="kv" style="color:var(--cs);font-size:14px">R$ '+_fm(hhVal)+'</div><div class="ks">'+pctT(hhVal)+'% do mês · '+cnt('HH')+' itens</div></div>'
+    +'<div class="kp" style="border-left:3px solid var(--gn)"><div class="kl">VB — Verba Pontual</div><div class="kv" style="color:var(--gn);font-size:14px">R$ '+_fm(vbVal)+'</div><div class="ks">'+pctT(vbVal)+'% do mês · '+cnt('VB')+' itens</div></div>'
+    +'<div class="kp" style="border-left:3px solid var(--ca)"><div class="kl">VB/Mês — Mensal</div><div class="kv" style="color:var(--ca);font-size:14px">R$ '+_fm(vmVal)+'</div><div class="ks">'+pctT(vmVal)+'% do mês · '+cnt('VM')+' itens</div></div>'
+    +'<div class="kp" style="border-left:3px solid var(--co)"><div class="kl">SV — Serviço</div><div class="kv" style="color:var(--co);font-size:14px">R$ '+_fm(svVal)+'</div><div class="ks">'+pctT(svVal)+'% do mês · '+cnt('SV')+' itens</div></div>'
+    +'</div>'
+    +'<div class="cd" id="bmPrint" style="overflow-x:auto;position:relative">'
+    +'<button class="fs-btn" onclick="toggleFullscreen(this)"></button>'
+    +'<div class="hdr" style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--cb);padding-bottom:6px;margin-bottom:6px">'
+    +'<div><div style="font-size:12px;font-weight:800;color:var(--cb)">BOLETIM DE MEDIÇÃO</div><div style="font-size:9px;color:var(--dm)">Contrato 5900117444 · CBSI → VALE Porto Tubarão/ES · '+fonteNota+'</div></div>'
+    +'<div style="display:flex;gap:4px"><button class="btn bo bsm" onclick="printBM()">🖨️ Imprimir BM</button></div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;font-size:8px;margin-bottom:4px;align-items:center;flex-wrap:wrap"><span>Competência: <b>'+compLabel+'</b></span><span>Período: <b>'+periodo+'</b></span><span>Data: <b>'+hoje+'</b></span>'
+    +'<span style="margin-left:auto;display:flex;align-items:center;gap:4px"><span style="color:var(--dm)">🔍</span><input type="text" id="bmSearch" placeholder="Buscar item, descrição ou tipo..." oninput="filterBM(this.value)" style="font-size:9px;padding:3px 8px;border-radius:4px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:200px"></span>'
+    +'</div>'
+    +'<table class="bm-table"><thead><tr><th>Item</th><th>Descrição</th><th>Tipo</th><th>Un.</th><th>P.Unit.(R$)</th><th>Ac.Ant.</th><th>No Mês</th><th>Total Ac.</th><th>Val.Ant.(R$)</th><th>Val.Mês(R$)</th><th>Val.Ac.(R$)</th><th>Saldo(R$)</th></tr></thead><tbody>'
+    +rowsHTML
+    +'</tbody><tfoot><tr style="font-weight:800;background:rgba(7,69,108,.08)"><td colspan="8" style="text-align:right">TOTAL GERAL</td><td style="color:var(--dm)">'+_fR(acumAnt)+'</td><td style="color:var(--gn)">'+_fR(totalMes)+'</td><td>'+_fR(totalAcum)+'</td><td style="color:var(--rd)">'+_fR(saldo)+'</td></tr></tfoot></table>'
+    +'<div style="margin-top:8px;display:flex;justify-content:space-between;font-size:8px;color:var(--dm)"><div>CONTRATADA: Wellington Fernando dos Santos</div><div>FISCAL: Gleisson Baêta</div><div>GESTOR: Gleisson Baêta ('+hoje+')</div></div>'
+    +'</div>';
+    try{bmAcumAntUI()}catch(e){}
+  }catch(e){console.warn('bmRenderNovo:',e);if(_bmBaseRender){try{_bmBaseRender();try{bmAcumAntUI()}catch(e2){}}catch(e3){}}}
+}
 // DASHBOARD: elimina "telas gerando dados" — Ativos a Manter (130) e Rotas Únicas (36) eram FIXOS no código.
 // Agora derivam do PARADAS (mesma fonte do Mapa de Paradas). O rótulo do medidor TAC também passa a ser vivo.
 function fixDashHardcodes(){
@@ -8435,8 +8515,8 @@ try{
   var _rmOrig=window.renderMapa;
   if(typeof _rmOrig==='function'){window.renderMapa=function(){var refill=false;try{if(typeof SM!=='undefined'&&SM&&SM.size===0){for(var i=1;i<=12;i++)SM.add(i);refill=true;}}catch(e){}
     try{return _rmOrig.apply(this,arguments)}finally{if(refill){try{SM.clear()}catch(e){}}}}}
-  var _rbmOrig=window.renderBM;
-  if(typeof _rbmOrig==='function'){window.renderBM=function(){var r=_rbmOrig.apply(this,arguments);try{bmAcumAntUI()}catch(e){}return r}}
+  _bmBaseRender=window.renderBM;
+  if(typeof _bmBaseRender==='function'){window.renderBM=function(){bmRenderNovo();return true}}
   // Planejamento (Motor Inteligente): o card "Meta Anual m²" trazia "baseline 222 laudos" FIXO no código-base.
   // A meta viva do painel é PINT_META.laudoMeta (259) — sincroniza o subtítulo com a mesma fonte das demais abas.
   var _rpOrig=window.renderPlan;
