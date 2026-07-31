@@ -6981,6 +6981,20 @@ function fixBaselineLaudos(){
     }
   }catch(e){console.warn('fixBaselineLaudos:',e)}
 }
+// EFETIVO (P5): a aba lista o CADASTRO completo (113); o Dashboard mostra os COM APURAÇÃO no período (ponto).
+// São métricas diferentes — o selo deixa isso explícito para não parecer divergência.
+function fixEfetTab(){
+  try{
+    var ef=document.getElementById('p-efet');if(!ef)return;
+    var old=ef.querySelector('#efetFonteBanner');if(old)old.remove();
+    var cad=(typeof EF!=='undefined')?EF.length:0;
+    var pt=0,fonte='cadastro';try{var r=efetivoDoMes();pt=r.n;fonte=r.fonte;}catch(e){}
+    var ban=document.createElement('div');ban.id='efetFonteBanner';
+    ban.style.cssText='background:#eef3fb;border:1px solid #c3d8f0;border-radius:6px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#0a4d80;font-weight:700';
+    ban.innerHTML='👥 <b>Cadastro:</b> '+cad+' colaboradores · <b>Com apuração no período'+(fonte==='ponto'?' (espelho de ponto)':' (cadastro)')+':</b> '+pt+'. O Dashboard e o Ranking usam os "com apuração"; esta lista é o cadastro completo.';
+    ef.insertBefore(ban,ef.firstChild);
+  }catch(e){console.warn('fixEfetTab:',e)}
+}
 // ONE PAGE (P2): corrige hardcodes por cima do render base — CONTRATO TAC (47%/R$1,94M fixos) → BM real,
 // EFETIVO (cadastro 113) → efetivo do ponto no período, e data de emissão dinâmica.
 function fixOnePage(){
@@ -8229,6 +8243,16 @@ function driveBmsAuto(files){
 function drivePintAuto(files){
   var f=acharUltimoXlsx(files);
   if(!f)return;
+  // OVERRIDE MANUAL (P4): se o usuário subiu a planilha à mão, o Drive só reassume quando tiver um arquivo
+  // MAIS NOVO que o upload manual — senão a leitura automática apagaria a inserção manual no próximo ciclo.
+  try{
+    var man=DRIVE_CFG.status&&DRIVE_CFG.status.pintManual;
+    if(man){
+      var tMan=new Date(man).getTime(), tDrive=f.modifiedTime?new Date(f.modifiedTime).getTime():0;
+      if(tDrive<=tMan)return;                 // upload manual é o mais recente → preserva
+      delete DRIVE_CFG.status.pintManual;      // Drive tem algo mais novo → assume e limpa o override
+    }
+  }catch(e){}
   var marca=f.id+'|'+f.modifiedTime+'|v3';
   if(DRIVE_CFG.status.pintImport&&DRIVE_CFG.status.pintImport.marca===marca)return;
   ensureXLSX().then(function(){return driveDownload(f.id)}).then(function(buf){
@@ -8247,6 +8271,7 @@ function drivePintAuto(files){
     ensureXLSX().then(function(){return file.arrayBuffer()}).then(function(buf){
       var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
       var r=pintImportarPlanilha(wb,file.name);
+      try{DRIVE_CFG.status.pintManual=new Date().toISOString();driveSave();}catch(e){} // marca override manual (P4)
       rtoast('\ud83c\udfa8 '+file.name+': '+r.atualizados+' laudos atualizados + '+r.novos+' novos'+(r.corte?(' \u00b7 corte '+r.corte):''));
     }).catch(function(e){
       console.warn('Pint upload novo falhou, tentando rotina antiga:',e);
@@ -8550,6 +8575,8 @@ try{
   var _rmOrig=window.renderMapa;
   if(typeof _rmOrig==='function'){window.renderMapa=function(){var refill=false;try{if(typeof SM!=='undefined'&&SM&&SM.size===0){for(var i=1;i<=12;i++)SM.add(i);refill=true;}}catch(e){}
     try{return _rmOrig.apply(this,arguments)}finally{if(refill){try{SM.clear()}catch(e){}}}}}
+  var _refOrig=window.renderEfet;
+  if(typeof _refOrig==='function'){window.renderEfet=function(){var r=_refOrig.apply(this,arguments);try{fixEfetTab()}catch(e){}return r}}
   _bmBaseRender=window.renderBM;
   if(typeof _bmBaseRender==='function'){window.renderBM=function(){bmRenderNovo();return true}}
   // Planejamento (Motor Inteligente): o card "Meta Anual m²" trazia "baseline 222 laudos" FIXO no código-base.
