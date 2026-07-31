@@ -6981,6 +6981,34 @@ function fixBaselineLaudos(){
     }
   }catch(e){console.warn('fixBaselineLaudos:',e)}
 }
+// ONE PAGE (P2): corrige hardcodes por cima do render base — CONTRATO TAC (47%/R$1,94M fixos) → BM real,
+// EFETIVO (cadastro 113) → efetivo do ponto no período, e data de emissão dinâmica.
+function fixOnePage(){
+  try{
+    var opr=document.getElementById('p-opr');if(!opr)return;
+    var all=[].slice.call(opr.querySelectorAll('div,span'));
+    // 1) EFETIVO → ponto do período
+    try{var ef=efetivoDoMes();if(ef&&ef.n){
+      var efHdr=all.find(function(e){return e.children.length===0&&/EFETIVO/.test(e.textContent||'')});
+      if(efHdr){var box=efHdr.parentNode;var kids=[].slice.call(box.querySelectorAll('div'));
+        for(var i=0;i<kids.length;i++){if(kids[i].children.length===0&&/^\d+$/.test((kids[i].textContent||'').trim())){kids[i].textContent=ef.n;break;}}}
+    }}catch(e){}
+    // 2) CONTRATO TAC 47% / R$1,94M → BM real (acum anterior + apuração do espelho)
+    try{
+      var totalContrato=4140037.11,acumAnt=(+localStorage.getItem('cbsi-v15-bm-acumant'));if(!(acumAnt>0))acumAnt=1608423.72;
+      var vComp=0;try{vComp=bmValorApurado(ROBO_LANC)}catch(e){}
+      var total=acumAnt+vComp,pct=totalContrato>0?Math.round(total/totalContrato*100):0;
+      var fM=function(x){return 'R$ '+(x/1e6).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'M'};
+      var tacHdr=all.find(function(e){return e.children.length===0&&/CONTRATO TAC/.test(e.textContent||'')});
+      if(tacHdr){var box2=tacHdr.parentNode;[].slice.call(box2.querySelectorAll('div')).forEach(function(k){if(k.children.length!==0)return;var t=k.textContent||'';
+        if(/executado/.test(t))k.textContent=pct+'% executado';
+        else if(/R\$.*M\s*\/\s*R\$.*M/.test(t))k.textContent=fM(total)+' / '+fM(totalContrato);});
+        var bar=box2.querySelector('div[style*="width:47%"]');if(bar)bar.style.width=Math.min(100,pct)+'%';}
+    }catch(e){}
+    // 3) Emissão dinâmica
+    try{var hoje=new Date().toLocaleDateString('pt-BR');all.forEach(function(e){if(e.children.length===0&&/Emiss[ãa]o:\s*\d/.test(e.textContent||''))e.textContent='Emissão: '+hoje;});}catch(e){}
+  }catch(e){console.warn('fixOnePage:',e)}
+}
 // BOLETIM DE MEDIÇÃO reescrito para COMPETÊNCIA REAL (P1). O renderBM base só entendia Jan/Fev
 // (isMed1/isMed1A) → mostrava zeros para Jul/Ago. Agora: itens HH = apuração AO VIVO da competência
 // selecionada (janela 21→20 do Robô), VB/VM/SV = quantidade manual (nm), acum. anterior EDITÁVEL,
@@ -8022,11 +8050,18 @@ function fixDashPeriodo(){
     if(typeof _oprOrig==='function'){
       window.renderOPR=function(sel,lm,mo){
         var agg=null;try{agg=aggSelMeses()}catch(e){}
-        var moUse=mo;
-        if(agg&&agg.meses.length&&mo){ // injeta o agregado preservando notas do último mês
+        var empty=false;try{empty=(typeof SM!=='undefined'&&SM&&SM.size===0)}catch(e){}
+        var moUse=mo,selUse=sel,lmUse=lm;
+        if(empty&&agg){ // ZERO-SELEÇÃO = ANO INTEIRO (evita a tela "Selecione mês"); MÊS e ACUMULADO = anual
+          moUse={lp:agg.lp,ap:agg.ap,lr:agg.lr,ar:agg.ar,ativs:agg.ativs||[],notas:''};
+          selUse={lr:agg.lr,lp:agg.lp,ar:agg.ar,ap:agg.ap};
+          lmUse=12;
+        } else if(agg&&agg.meses.length&&mo){ // injeta o agregado preservando notas do último mês
           moUse={lp:agg.lp,ap:agg.ap,lr:agg.lr,ar:agg.ar,ativs:agg.ativs.length?agg.ativs:(mo.ativs||[]),notas:mo.notas||''};
         }
-        return _oprOrig.call(this,sel,lm,moUse);
+        var r=_oprOrig.call(this,selUse,lmUse,moUse);
+        try{fixOnePage()}catch(e){}
+        return r;
       };
     }
   }catch(e){console.warn('wrap renderOPR:',e)}
