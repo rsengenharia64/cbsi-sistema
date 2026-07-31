@@ -6981,6 +6981,24 @@ function fixBaselineLaudos(){
     }
   }catch(e){console.warn('fixBaselineLaudos:',e)}
 }
+// DASHBOARD: elimina "telas gerando dados" — Ativos a Manter (130) e Rotas Únicas (36) eram FIXOS no código.
+// Agora derivam do PARADAS (mesma fonte do Mapa de Paradas). O rótulo do medidor TAC também passa a ser vivo.
+function fixDashHardcodes(){
+  try{
+    var dash=document.getElementById('p-dash');if(!dash||typeof PARADAS==='undefined')return;
+    var tac=PARADAS.filter(function(p){return p.e==='TAC'});
+    var ativos=new Set();tac.forEach(function(p){String(p.a||'').split('/').forEach(function(x){x=(x||'').trim();if(x&&x!=='—')ativos.add(x)})});
+    var rotas=new Set();tac.forEach(function(p){var r=(p.r||'').trim();if(r&&r!=='—')rotas.add(r)});
+    var nAt=ativos.size,nRo=rotas.size,nTac=tac.length;
+    var cards=dash.querySelectorAll('.kp');
+    for(var i=0;i<cards.length;i++){var kl=cards[i].querySelector('.kl');if(!kl)continue;var t=(kl.textContent||'').trim();var kv=cards[i].querySelector('.kv');if(!kv)continue;
+      if(/Ativos a Manter/i.test(t)&&nAt>0)kv.textContent=nAt;
+      else if(/Rotas [ÚU]nicas/i.test(t)&&nRo>0)kv.textContent=nRo;
+    }
+    var g5=document.getElementById('g5');
+    if(g5&&nTac>0){var els=g5.querySelectorAll('*');for(var j=0;j<els.length;j++){var e=els[j];if(e.children.length)continue;if(/^\s*\d+\s*paradas\s*$/.test(e.textContent||'')){e.textContent=nTac+' paradas';}}}
+  }catch(e){console.warn('fixDashHardcodes:',e)}
+}
 function fixBmAcumDash(){
   try{
     var totalContrato=4140037.11;
@@ -8409,7 +8427,14 @@ try{
   var _bpOrig=window.buildPintura;
   if(typeof _bpOrig==='function'){window.buildPintura=function(){var r=_bpOrig.apply(this,arguments);try{fixPintFonte()}catch(e){}return r}}
   var _ROrig=window.R;
-  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}try{fixBmAcumDash()}catch(e){}return r}}
+  if(typeof _ROrig==='function'){window.R=function(){var r=_ROrig.apply(this,arguments);try{fixPintFonte()}catch(e){}try{fixDashPrevReal()}catch(e){}try{fixEfetivoCard()}catch(e){}try{fixDashPeriodo()}catch(e){}try{bmAcumAntUI()}catch(e){}try{fixBmAcumDash()}catch(e){}try{fixDashHardcodes()}catch(e){}return r}}
+  // ZERO-SELEÇÃO = ANO INTEIRO nas abas que ficavam EM BRANCO com nenhum mês selecionado (Impactos e Mapa de
+  // Paradas). Convenção já usada no Dashboard ("nenhum mês → ano inteiro"); aqui estendida às abas da base.
+  var _giOrig=window.getImp;
+  if(typeof _giOrig==='function'){window.getImp=function(){try{if(typeof SM!=='undefined'&&SM&&SM.size===0&&typeof D!=='undefined'&&D.impactos)return D.impactos.slice();}catch(e){}return _giOrig.apply(this,arguments)}}
+  var _rmOrig=window.renderMapa;
+  if(typeof _rmOrig==='function'){window.renderMapa=function(){var refill=false;try{if(typeof SM!=='undefined'&&SM&&SM.size===0){for(var i=1;i<=12;i++)SM.add(i);refill=true;}}catch(e){}
+    try{return _rmOrig.apply(this,arguments)}finally{if(refill){try{SM.clear()}catch(e){}}}}}
   var _rbmOrig=window.renderBM;
   if(typeof _rbmOrig==='function'){window.renderBM=function(){var r=_rbmOrig.apply(this,arguments);try{bmAcumAntUI()}catch(e){}return r}}
   // Planejamento (Motor Inteligente): o card "Meta Anual m²" trazia "baseline 222 laudos" FIXO no código-base.
