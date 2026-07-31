@@ -7016,7 +7016,11 @@ var DEV_EVO_ITENS=[
   {n:'Meta de laudos e m² derivada do painel',d:'Plano mensal vem da baseline (dfBL) de cada laudo, não de hardcode. Baseline sincronizada (259 laudos).'},
   {n:'Planejamento (Motor) responde ao filtro de meses',d:'Executado e Média/mês refletem os meses selecionados; matriz destacada; Meta e Projeção seguem anuais.'},
   {n:'Exportação Excel formatada — Auditoria de Ponto',d:'Abas: Resumo, Ponto Diário Individual, Por Colaborador (real × medido), HE 50% não reconhecida, Memorial.'},
-  {n:'Regra de cálculo do cliente replicada',d:'Racional do espelho (jornada, HN/HE/ADN, tolerâncias, De Acordo HE) documentado nas premissas limitantes.'}
+  {n:'Regra de cálculo do cliente replicada',d:'Racional do espelho (jornada, HN/HE/ADN, tolerâncias, De Acordo HE) documentado nas premissas limitantes.'},
+  {n:'Backup & Restauração de dados (FASE 7)',d:'Exportar/importar TODO o estado do sistema (.json) — espelho de ponto, edições, De Acordo HE, BM, painel, config. Proteção client-side contra perda de dados. Aba Dados.'},
+  {n:'Boletim de Medição por competência real',d:'renderBM reescrito: HH ao vivo da competência (janela 21→20), acum. anterior editável, período/data dinâmicos — sem mais zeros para meses ≠ Fev.'},
+  {n:'Ranking sincronizado ao espelho + score recalibrado',d:'Ranking lê a apuração real do ponto e filtra por mês; score = Assiduidade+Produtividade/dia+HE+Segurança (deixou de saturar em 100).'},
+  {n:'One Page e Dashboard sem hardcodes',d:'CONTRATO TAC (BM real), Efetivo do ponto, Ativos/Rotas/paradas vivos do PARADAS, estados TAC pela data de hoje, zero-seleção = ano.'}
 ];
 function fixDevRoadmap(){
   try{
@@ -7054,6 +7058,47 @@ function fixBaselineLaudos(){
       if(/baseline\s*\d+\s*laudos/i.test(t)){var novo=t.replace(/baseline\s*\d+\s*laudos/i,'baseline '+meta+' laudos');if(novo!==t)el.textContent=novo;}
     }
   }catch(e){console.warn('fixBaselineLaudos:',e)}
+}
+// BACKUP & RESTAURAÇÃO (roadmap FASE 7 — versão client-side): exporta/importa TODO o estado do sistema
+// (todas as chaves localStorage cbsi-*: espelho de ponto, edições, De Acordo HE, BM, painel, config).
+window.cbsiExportBackup=function(){
+  try{
+    var dados={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(/^cbsi-/.test(k))dados[k]=localStorage.getItem(k);}
+    var payload={sistema:'CBSI Gestão Operacional',versao:'v15',quando:new Date().toISOString(),chaves:Object.keys(dados).length,dados:dados};
+    var blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+    var url=URL.createObjectURL(blob);var a=document.createElement('a');
+    var d=new Date();var nome='CBSI_backup_'+d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+'.json';
+    a.href=url;a.download=nome;document.body.appendChild(a);a.click();setTimeout(function(){try{document.body.removeChild(a);URL.revokeObjectURL(url)}catch(e){}},200);
+    try{rtoast('💾 Backup exportado: '+Object.keys(dados).length+' conjuntos ('+nome+')')}catch(e){}
+  }catch(e){alert('Erro ao exportar backup: '+e.message)}
+};
+window.cbsiImportBackup=function(file){
+  if(!file)return;
+  if(!confirm('Importar este backup vai SUBSTITUIR os dados atuais deste navegador e recarregar a página. Continuar?'))return;
+  var fr=new FileReader();
+  fr.onload=function(){
+    try{
+      var p=JSON.parse(fr.result);var dd=(p&&p.dados)?p.dados:p;var nn=0;
+      Object.keys(dd).forEach(function(k){if(/^cbsi-/.test(k)){localStorage.setItem(k,dd[k]);nn++;}});
+      alert('✅ Backup restaurado: '+nn+' conjuntos de dados. A página vai recarregar.');
+      location.reload();
+    }catch(e){alert('Arquivo de backup inválido: '+e.message)}
+  };
+  fr.readAsText(file);
+};
+function fixDadosBackup(){
+  try{
+    var dd=document.getElementById('p-dados');if(!dd||dd.querySelector('#cbsiBackupCard'))return;
+    var nk=0;for(var i=0;i<localStorage.length;i++){if(/^cbsi-/.test(localStorage.key(i)))nk++;}
+    var card=document.createElement('div');card.id='cbsiBackupCard';card.className='cd';card.style.cssText='border-left:3px solid var(--gn);margin-bottom:8px';
+    card.innerHTML='<div style="font-size:11px;font-weight:800;color:var(--gn);margin-bottom:4px">💾 BACKUP & RESTAURAÇÃO DE DADOS</div>'
+      +'<div style="font-size:9px;color:var(--dm);margin-bottom:8px">Seus dados (espelho de ponto, edições, De Acordo HE, BM, painel, configurações) ficam salvos neste navegador. Exporte um backup periodicamente e guarde o arquivo em local seguro — é a sua proteção contra perda de dados. <b>'+nk+'</b> conjuntos de dados salvos agora.</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      +'<button class="btn bo bsm" onclick="cbsiExportBackup()">⬇️ Exportar backup (.json)</button>'
+      +'<label class="btn bo bsm" style="cursor:pointer;margin:0">⬆️ Importar backup<input type="file" accept="application/json,.json" style="display:none" onchange="cbsiImportBackup(this.files[0]);this.value=\'\'"></label>'
+      +'</div>';
+    dd.insertBefore(card,dd.firstChild);
+  }catch(e){console.warn('fixDadosBackup:',e)}
 }
 // EFETIVO (P5): a aba lista o CADASTRO completo (113); o Dashboard mostra os COM APURAÇÃO no período (ponto).
 // São métricas diferentes — o selo deixa isso explícito para não parecer divergência.
@@ -8674,6 +8719,8 @@ try{
     try{return _rmOrig.apply(this,arguments)}finally{if(refill){try{SM.clear()}catch(e){}}}}}
   var _refOrig=window.renderEfet;
   if(typeof _refOrig==='function'){window.renderEfet=function(){var r=_refOrig.apply(this,arguments);try{fixEfetTab()}catch(e){}return r}}
+  var _rdadOrig=window.renderDados;
+  if(typeof _rdadOrig==='function'){window.renderDados=function(){var r=_rdadOrig.apply(this,arguments);try{fixDadosBackup()}catch(e){}return r}}
   _bmBaseRender=window.renderBM;
   if(typeof _bmBaseRender==='function'){window.renderBM=function(){bmRenderNovo();return true}}
   // Planejamento (Motor Inteligente): o card "Meta Anual m²" trazia "baseline 222 laudos" FIXO no código-base.
@@ -8736,6 +8783,8 @@ try{
   }
 }catch(e){console.warn('calcver:',e)}
 try{renderAndaimes()}catch(e){console.warn('Andaimes init:',e)}
+// re-renderiza o Cronograma (Em Desenv.) para o fixDevRoadmap aplicar — o buildDev base rodou antes do wrapper
+try{if(typeof buildDev==='function')buildDev()}catch(e){console.warn('buildDev re-init:',e)}
 // gancho de diagnóstico (usado nos testes automatizados)
 window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,calcDiaCliente:calcDiaCliente,ensurePdfJs:ensurePdfJs,
   lancCount:function(){return ROBO_LANC.length},filtro:function(){var f=roboFiltroAtivo();return{n:f.regs.length,rotulo:f.rotulo,modo:f.modo}},ptedit:function(){return PT_EDIT},heauth:function(){return HE_AUTH}};
