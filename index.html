@@ -7157,22 +7157,32 @@ function bmMesDeArquivo(f){
   return null;
 }
 // Faz o parse do layout "LINHA DE SERVIÇO / QTD" de um BM (HH's e Equipamentos) → {linha: qtd}.
+// Lê SOMENTE o BOLETIM CONSOLIDADO oficial (template SAP "GERÊNCIA DE CONTRATOS"): assinatura =
+// header com ITEM DO CONTRATO + LINHA DE SERVIÇO + QTD (na aba de medição). Varre TODAS as abas e
+// aceita variações ("LINHA SE SERVIÇO", "QUANTIDADE"). Arquivos de base/referência (PRODUÇÃO M²,
+// ANDAIME/QQP, memoriais) NÃO têm essa assinatura → retorna null (não são somados). → {linha: qtd}
 function bmParseLinhaQtd(buf){
   try{
     var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
-    var shName=wb.SheetNames.filter(function(n){return /MEDICAO|MEDIÇÃO/i.test(n)})[0]||wb.SheetNames[0];
-    var rows=XLSX.utils.sheet_to_json(wb.Sheets[shName],{header:1});
-    var hIdx=-1,cLinha=-1,cQtd=-1;
-    rows.some(function(r,i){
-      if(!r)return false;
-      var j=-1;r.forEach(function(c,k){if(j<0&&typeof c==='string'&&/LINHA DE SERVI/i.test(c))j=k});
-      if(j>=0){hIdx=i;cLinha=j;r.forEach(function(c,k){if(cQtd<0&&typeof c==='string'&&/^QTD/i.test(String(c).trim()))cQtd=k});return true}
-      return false;
-    });
-    if(hIdx<0||cQtd<0)return null;
-    var porItem={};
-    rows.slice(hIdx+1).forEach(function(r){if(!r)return;var li=parseInt(r[cLinha]),q=parseFloat(r[cQtd]);if(!isNaN(li)&&!isNaN(q))porItem[String(li)]=(porItem[String(li)]||0)+q;});
-    return porItem;
+    for(var si=0;si<wb.SheetNames.length;si++){
+      var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[si]],{header:1});
+      var hIdx=-1,cLinha=-1,cQtd=-1,temItemContrato=false;
+      for(var i=0;i<Math.min(rows.length,60);i++){
+        var r=rows[i];if(!r)continue;
+        var jL=-1,jQ=-1,jI=false;
+        for(var k=0;k<r.length;k++){var c=r[k];if(typeof c!=='string')continue;var s=c.trim();
+          if(jL<0&&/LINHA\s+(DE|SE)\s+SERVI/i.test(s))jL=k;
+          if(jQ<0&&/^(QTD|QUANTIDADE)\b/i.test(s))jQ=k;
+          if(/ITEM\s+DO\s+CONTRAT/i.test(s))jI=true;
+        }
+        if(jL>=0&&jQ>=0){hIdx=i;cLinha=jL;cQtd=jQ;temItemContrato=jI;break;}
+      }
+      if(hIdx<0||cQtd<0||!temItemContrato)continue; // sem assinatura de boletim consolidado → próxima aba
+      var porItem={};
+      rows.slice(hIdx+1).forEach(function(r){if(!r)return;var li=parseInt(r[cLinha]),q=parseFloat(r[cQtd]);if(!isNaN(li)&&!isNaN(q))porItem[String(li)]=(porItem[String(li)]||0)+q;});
+      if(Object.keys(porItem).length)return porItem;
+    }
+    return null; // não é o boletim consolidado (é arquivo de referência/base de cálculo)
   }catch(e){console.warn('bmParseLinhaQtd:',e);return null}
 }
 // Meses-alvo do BM conforme o filtro: 1..11 selecionados = esses meses (soma); 0 ou 12 = TODOS os
@@ -8359,7 +8369,7 @@ function driveMonitor(){
   var seq=Promise.resolve();
   chaves.forEach(function(ch){
     seq=seq.then(function(){
-      return driveListRec(DRIVE_CFG.pastas[ch],(ch==='andaimes'||ch==='ponto')?4:2).then(function(files){
+      return driveListRec(DRIVE_CFG.pastas[ch],(ch==='andaimes'||ch==='ponto'||ch==='bms')?4:2).then(function(files){
         DRIVE_CFG.status[ch]={quando:new Date().toLocaleString('pt-BR'),qtde:files.length,
           ult:files.slice().sort(function(a,b){return (b.modifiedTime||'')<(a.modifiedTime||'')?-1:1})[0]};
         driveSave();
@@ -8404,32 +8414,41 @@ function acharUltimoXlsx(files,regex){
 }
 // BM consolidado do Drive → quantidades (nm) dos itens do módulo Boletim Medição
 function driveBmsAuto(files){
-  // L\u00ea TODOS os "BM HH's E EQUIPAMENTOS" da pasta, UM POR M\u00caS, guardando as quantidades por compet\u00eancia
-  // em cbsi-v15-bm-mesqtd = {mes: {linha: qtd}}. N\u00e3o sobrescreve tudo com o \u00faltimo (modelo m\u00eas a m\u00eas).
-  var alvos=(files||[]).filter(function(f){return /xlsx?$/i.test(f.name)&&/HH/i.test(f.name)&&/EQUIP/i.test(f.name);});
-  if(!alvos.length)return;
-  var qtdMes=lsg('cbsi-v15-bm-mesqtd',{});
-  var marcas=(DRIVE_CFG.status.bmsFilesMarca=DRIVE_CFG.status.bmsFilesMarca||{});
+  // Motor de leitura do BM: varre a pasta (e subpastas), reconhece o BOLETIM CONSOLIDADO oficial pela
+  // assinatura (ITEM DO CONTRATO+LINHA DE SERVI\u00c7O+QTD) e guarda, POR M\u00caS, o consolidado MAIS RECENTE em
+  // cbsi-v15-bm-mesqtd = {mes:{linha:qtd}}. Os arquivos de base/refer\u00eancia (PRODU\u00c7\u00c3O M\u00b2, ANDAIME) s\u00e3o
+  // ignorados (retornam null no parser). Cache por arquivo \u2192 s\u00f3 baixa o que mudou. Atualiza sozinho.
+  // Referência de leitura = o BOLETIM CONSOLIDADO "BM HH's E EQUIPAMENTOS" (convenção do cliente).
+  // Exclui explicitamente os arquivos de base/referência (PRODUÇÃO M², ANDAIME, memoriais, SGC/fornecedor).
+  var ehBase=function(n){return /PRODU[ÇC][ÃA]O|\bM²\b|MEMORIAL|QQP|ANDAIME|CANTEIRO|FORNECEDOR|ITENS_MEDIDOS|SGC/i.test(n);};
+  var cand=(files||[]).filter(function(f){return /\.(xlsx?|xls)$/i.test(f.name)&&!ehBase(f.name)&&/HH/i.test(f.name)&&/EQUIP/i.test(f.name)&&bmMesDeArquivo(f);});
+  if(!cand.length)return;
+  var cache=lsg('cbsi-v15-bm-filecache',{}); // {id:{marca,mes,mod,itens|null,nome}}
   ensureXLSX().then(function(){
     var seq=Promise.resolve(),mudou=0;
-    alvos.forEach(function(f){
-      var mes=bmMesDeArquivo(f);if(!mes)return;
+    cand.forEach(function(f){
       var marca=f.id+'|'+f.modifiedTime;
-      if(marcas[f.id]===marca&&qtdMes[mes])return; // j\u00e1 lido e sem mudan\u00e7a
+      if(cache[f.id]&&cache[f.id].marca===marca)return; // j\u00e1 analisado e sem mudan\u00e7a
       seq=seq.then(function(){
         return driveDownload(f.id).then(function(buf){
-          var porItem=bmParseLinhaQtd(buf);
-          if(porItem&&Object.keys(porItem).length){qtdMes[mes]=porItem;marcas[f.id]=marca;mudou++;lss('cbsi-v15-bm-mesqtd',qtdMes);driveSave();}
-        }).catch(function(e){console.warn('BMS '+f.name,e)});
+          var porItem=bmParseLinhaQtd(buf); // null se n\u00e3o for o boletim consolidado
+          cache[f.id]={marca:marca,mes:bmMesDeArquivo(f),mod:f.modifiedTime||'',itens:(porItem&&Object.keys(porItem).length)?porItem:null,nome:f.name};
+          mudou++;lss('cbsi-v15-bm-filecache',cache);
+        }).catch(function(e){console.warn('BMS '+f.name,e);cache[f.id]={marca:marca,mes:bmMesDeArquivo(f),mod:f.modifiedTime||'',itens:null,nome:f.name,erro:1};lss('cbsi-v15-bm-filecache',cache);});
       });
     });
     seq.then(function(){
+      // reconstr\u00f3i o mapa por m\u00eas: para cada m\u00eas, o boletim consolidado com modifiedTime MAIS RECENTE (n\u00e3o soma vers\u00f5es)
+      var best={},qtdMes={};
+      Object.keys(cache).forEach(function(id){var c=cache[id];if(!c||!c.itens||!c.mes)return;if(!best[c.mes]||(c.mod||'')>(best[c.mes].mod||'')){best[c.mes]={mod:c.mod,itens:c.itens,nome:c.nome};}});
+      Object.keys(best).forEach(function(m){qtdMes[m]=best[m].itens;});
+      lss('cbsi-v15-bm-mesqtd',qtdMes);
+      DRIVE_CFG.status.bmsImport={quando:new Date().toLocaleString('pt-BR'),meses:Object.keys(qtdMes).length,analisados:mudou};driveSave();
       if(mudou){
-        DRIVE_CFG.status.bmsImport={quando:new Date().toLocaleString('pt-BR'),meses:Object.keys(qtdMes).length,arquivosNovos:mudou};driveSave();
         try{renderBM()}catch(e){}
         try{if(typeof R==='function')R()}catch(e){}
-        rlog('Drive BMS','Ler BMs m\u00eas a m\u00eas',Object.keys(qtdMes).length+' meses na pasta (novos: '+mudou+')');
-        rtoast('\ud83d\udcb0 BMs lidos por m\u00eas: '+Object.keys(qtdMes).length+' meses na pasta');
+        rlog('Drive BMS','Ler boletim consolidado por m\u00eas',Object.keys(qtdMes).length+' meses (analisados: '+mudou+')');
+        rtoast('\ud83d\udcb0 BM atualizado: '+Object.keys(qtdMes).length+' m\u00eas(es) com boletim consolidado na pasta');
       }
     });
   }).catch(function(e){console.warn('BMS auto:',e)});
