@@ -7128,9 +7128,8 @@ function fixOnePage(){
     }}catch(e){}
     // 2) CONTRATO TAC 47% / R$1,94M → BM real (acum anterior + apuração do espelho)
     try{
-      var totalContrato=4140037.11,acumAnt=(+localStorage.getItem('cbsi-v15-bm-acumant'));if(!(acumAnt>0))acumAnt=1608423.72;
-      var vComp=0;try{vComp=bmValorApurado(ROBO_LANC)}catch(e){}
-      var total=acumAnt+vComp,pct=totalContrato>0?Math.round(total/totalContrato*100):0;
+      var totalContrato=bmContratoTotal();
+      var total=bmAcumGeral(),pct=totalContrato>0?Math.round(total/totalContrato*100):0;
       var fM=function(x){return 'R$ '+(x/1e6).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'M'};
       var tacHdr=all.find(function(e){return e.children.length===0&&/CONTRATO TAC/.test(e.textContent||'')});
       if(tacHdr){var box2=tacHdr.parentNode;[].slice.call(box2.querySelectorAll('div')).forEach(function(k){if(k.children.length!==0)return;var t=k.textContent||'';
@@ -7147,6 +7146,12 @@ function fixOnePage(){
 // selecionada (janela 21→20 do Robô), VB/VM/SV = quantidade manual (nm), acum. anterior EDITÁVEL,
 // período e data dinâmicos. Em qualquer erro, cai no render base.
 // ---- BM MÊS A MÊS (cada mês abre seu BM da pasta; todos = soma) — modelo B ----
+// Valor TOTAL do contrato (denominador do % de execução) — EDITÁVEL. Estimativa jan/2026–ago/2027 =
+// 20 meses × R$ 2.300.000 = R$ 46.000.000 (troque pelo valor real na aba BM, card "Contrato").
+function bmContratoTotal(){var v=+localStorage.getItem('cbsi-v15-bm-contrato');return v>0?v:46000000;}
+window.bmSetContrato=function(v){var n=+v||0;localStorage.setItem('cbsi-v15-bm-contrato',String(n));try{renderBM()}catch(e){}try{if(typeof R==='function')R()}catch(e){}};
+// Acumulado GERAL do contrato = acum. anterior (manual) + Σ de TODOS os boletins lidos na pasta.
+function bmAcumGeral(){var a=+localStorage.getItem('cbsi-v15-bm-acumant');if(!(a>0))a=0;var md=lsg('cbsi-v15-bm-mesdata',{});Object.keys(md).forEach(function(m){a+=(+md[m].total||0);});return a;}
 // Descobre o mês (1-12) de um arquivo de BM pela subpasta ("07 - JULHO") ou pelo nome ("JUL.2026").
 function bmMesDeArquivo(f){
   var s=(((f&&f._pasta)||'')+' '+((f&&f.name)||'')).toUpperCase();
@@ -7263,7 +7268,7 @@ function bmRenderNovo(){
     var _fm=(typeof fm==='function')?fm:function(x){return Math.round(x).toLocaleString('pt-BR')};
     var _fR=(typeof fR==='function')?fR:function(x){return (+x||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})};
     var _fd=(typeof fd==='function')?fd:function(x,d){return (+x||0).toLocaleString('pt-BR',{minimumFractionDigits:d||1,maximumFractionDigits:d||1})};
-    var totalContrato=4140037.11;
+    var totalContrato=bmContratoTotal();
     var acumAnt=(+localStorage.getItem('cbsi-v15-bm-acumant'));if(!(acumAnt>0))acumAnt=0; // modelo B: acumulado = soma dos BMs da pasta; acum. anterior é ajuste manual (default 0)
     // BM mês a mês: cada mês abre seu BM (arquivo da pasta); vários/todos = SOMA
     var meses=bmMesesAlvo();
@@ -7285,7 +7290,7 @@ function bmRenderNovo(){
     +'<div class="kp"><div class="kl">Valor Mês ('+compLabel+')</div><div class="kv" style="color:var(--cs);font-size:16px">R$ '+_fm(totalMes)+'</div><div class="ks">'+periodo+'</div></div>'
     +'<div class="kp"><div class="kl">Acumulado Anterior</div><div class="kv" style="color:var(--dm);font-size:16px">R$ '+_fm(acumAnt)+'</div><div class="ks">editável (medições anteriores)</div></div>'
     +'<div class="kp"><div class="kl">Total Acumulado</div><div class="kv" style="color:var(--ca);font-size:16px">R$ '+_fm(totalAcum)+'</div><div class="ks">'+compLabel+'</div></div>'
-    +'<div class="kp"><div class="kl">Contrato</div><div class="kv" style="color:var(--dm);font-size:16px">R$ '+_fm(totalContrato)+'</div><div class="ks">5900117444</div></div>'
+    +'<div class="kp"><div class="kl">Contrato</div><div class="kv" style="color:var(--dm);font-size:16px">R$ '+_fm(totalContrato)+'</div><div class="ks">5900117444 · <input id="bmContratoInp" type="number" step="1000" value="'+totalContrato+'" style="width:118px;font-size:9px;padding:1px 3px" onchange="bmSetContrato(this.value)" title="Valor total do contrato (editável). Estimativa jan/2026–ago/2027: 20 meses × R$ 2,3 mi = R$ 46 mi. Troque pelo valor real."></div></div>'
     +'<div class="kp"><div class="kl">Saldo</div><div class="kv" style="color:'+(saldo>0?'var(--gn)':'var(--rd)')+';font-size:16px">R$ '+_fm(saldo)+'</div><div class="ks">Exec: '+execPct+'%</div><div class="kb"><div class="kf" style="width:'+Math.min(execPct,100)+'%;background:var(--ca)"></div></div></div>'
     +'</div>'
     +'<div class="g g4" style="margin-bottom:6px">'
@@ -7354,7 +7359,7 @@ function fixTACHoje(){
 }
 function fixBmAcumDash(){
   try{
-    var totalContrato=4140037.11;
+    var totalContrato=bmContratoTotal();
     var acumAnt=(+localStorage.getItem('cbsi-v15-bm-acumant'));if(!(acumAnt>0))acumAnt=0; // modelo B
     // MESMA régua da aba Boletim Medição: soma dos BMs dos meses-alvo (arquivos da pasta) + ponto (prévia)
     var Cd=bmCalcMes(bmMesesAlvo());
