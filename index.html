@@ -7230,20 +7230,28 @@ function bmCalcMes(meses){
   var md=lsg('cbsi-v15-bm-mesdata',{});
   var ano=(typeof Y!=='undefined')?Y:2026;
   var agg={},total=0,mesesFile=[],mesesPonto=[];
-  var addRow=function(key,base,q,v){if(!agg[key])agg[key]={i:{it:base.it,d:base.desc||base.d||'',t:base.t,u:base.un||base.u||'',pu:base.pu},q:0,v:0};agg[key].q+=q;agg[key].v+=v;};
+  // 1 mês = linhas idênticas ao boletim (chave por linha); vários meses = CONSOLIDA por serviço (chave por descrição)
+  var multi=(meses||[]).length!==1;
+  var normD=function(s){return String(s||'').toUpperCase().replace(/\s+/g,' ').trim();};
+  var keyOf=function(m,base){return multi?('D|'+normD(base.desc||base.d)):(String(m)+':'+(base.it||base.desc));};
+  var addRow=function(m,base,q,v){var key=keyOf(m,base);
+    if(!agg[key])agg[key]={i:{it:base.it,d:base.desc||base.d||'',t:base.t,u:base.un||base.u||'',pu:base.pu},q:0,v:0,_tv:{}};
+    agg[key].q+=q;agg[key].v+=v;var t=base.t||'HH';agg[key]._tv[t]=(agg[key]._tv[t]||0)+v;};
   (meses||[]).forEach(function(m){
     var d=md[m];
     if(d&&d.rows&&d.rows.length){mesesFile.push(m);total+=(+d.total||0);
-      d.rows.forEach(function(r){addRow(String(m)+':'+(r.it||r.desc),r,r.q,r.v);});
+      d.rows.forEach(function(r){addRow(m,r,r.q,r.v);});
     } else {
       var regs=[];try{var p=periodoDaCompetencia(m,ano);regs=(ROBO_LANC||[]).filter(function(l){var dd=dataBR(l.data);return dd>=p.ini&&dd<=p.fim});}catch(e){}
       if(regs.length){mesesPonto.push(m);
         try{var con=roboConsolidaRegs(regs);Object.keys(con.porFunc).forEach(function(f){if(f.indexOf('(sem De×Para')===0)return;var a=con.porFunc[f];
-          [['HN',a.hn],['HE50',a.he50],['HE100',a.he100],['HE150',a.he150],['ADN',a.adn]].forEach(function(par){var it=bmItemDe(f,par[0]);if(it&&par[1]){var v=(+par[1])*(+it.pu||0);total+=v;addRow(String(m)+':'+it.it,{it:it.it,desc:it.d,un:it.u,t:'HH',pu:it.pu},+par[1],v);}});});}catch(e){}
+          [['HN',a.hn],['HE50',a.he50],['HE100',a.he100],['HE150',a.he150],['ADN',a.adn]].forEach(function(par){var it=bmItemDe(f,par[0]);if(it&&par[1]){var v=(+par[1])*(+it.pu||0);total+=v;addRow(m,{it:it.it,desc:it.d,un:it.u,t:'HH',pu:it.pu},+par[1],v);}});});}catch(e){}
       }
     }
   });
-  var rows=Object.keys(agg).map(function(k){return agg[k];}).sort(function(a,b){return ((+a.i.it)||0)-((+b.i.it)||0)});
+  // resolve o TIPO de cada serviço pelo tipo que carrega mais valor (some meses rotulam a UNID diferente)
+  Object.keys(agg).forEach(function(k){var tv=agg[k]._tv||{},best=null,bv=-1;Object.keys(tv).forEach(function(t){if(tv[t]>bv){bv=tv[t];best=t;}});if(best)agg[k].i.t=best;delete agg[k]._tv;});
+  var rows=Object.keys(agg).map(function(k){return agg[k];}).sort(function(a,b){return ((+a.i.it)||0)-((+b.i.it)||0)||((a.i.d||'')<(b.i.d||'')?-1:1);});
   var byT=function(t){return rows.filter(function(r){return r.i.t===t}).reduce(function(s,r){return s+r.v},0)};
   var totalMes=Math.round(total*100)/100;
   var MN=(typeof MESES_NOMES!=='undefined')?MESES_NOMES:['','JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
