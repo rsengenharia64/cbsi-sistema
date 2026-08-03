@@ -7161,63 +7161,79 @@ function bmMesDeArquivo(f){
 // header com ITEM DO CONTRATO + LINHA DE SERVIÇO + QTD (na aba de medição). Varre TODAS as abas e
 // aceita variações ("LINHA SE SERVIÇO", "QUANTIDADE"). Arquivos de base/referência (PRODUÇÃO M²,
 // ANDAIME/QQP, memoriais) NÃO têm essa assinatura → retorna null (não são somados). → {linha: qtd}
-function bmParseLinhaQtd(buf){
+function bmTipoDeUnid(u){u=(u||'').toUpperCase().replace(/\s/g,'');if(/HH/.test(u))return'HH';if(/M[ÊE]S|VB\/M|VBM/.test(u))return'VM';if(/VB/.test(u))return'VB';if(/SV/.test(u))return'SV';return'HH';}
+// Lê o BOLETIM CONSOLIDADO oficial (assinatura ITEM DO CONTRATO + LINHA DE SERVIÇO + QTD). Retorna as
+// LINHAS COMPLETAS com o VALOR do PRÓPRIO arquivo (QTD×PREÇO ou coluna VALOR TOTAL) — pois cada mês pode
+// numerar/precificar diferente; o valor do boletim é a verdade. {rows:[{it,desc,un,pu,q,v,t}], total}.
+// Arquivos de base/referência (PRODUÇÃO M²/ANDAIME) não têm a assinatura → null.
+function bmParseBoletim(buf){
   try{
     var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
     for(var si=0;si<wb.SheetNames.length;si++){
       var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[si]],{header:1});
-      var hIdx=-1,cLinha=-1,cQtd=-1,temItemContrato=false;
+      var hIdx=-1,cItem=-1,cL=-1,cU=-1,cD=-1,cP=-1,cQ=-1,cV=-1;
       for(var i=0;i<Math.min(rows.length,60);i++){
         var r=rows[i];if(!r)continue;
-        var jL=-1,jQ=-1,jI=false;
+        var jItem=-1,jL=-1,jU=-1,jD=-1,jP=-1,jQ=-1,jV=-1;
         for(var k=0;k<r.length;k++){var c=r[k];if(typeof c!=='string')continue;var s=c.trim();
+          if(jItem<0&&/ITEM\s+DO\s+CONTRAT/i.test(s))jItem=k;
           if(jL<0&&/LINHA\s+(DE|SE)\s+SERVI/i.test(s))jL=k;
+          if(jU<0&&/^UNID/i.test(s))jU=k;
+          if(jD<0&&/DESCRI[ÇC]/i.test(s))jD=k;
+          if(jP<0&&/PRE[ÇC]O\s+UNIT/i.test(s))jP=k;
           if(jQ<0&&/^(QTD|QUANTIDADE)\b/i.test(s))jQ=k;
-          if(/ITEM\s+DO\s+CONTRAT/i.test(s))jI=true;
+          if(jV<0&&/VALOR\s+TOTAL/i.test(s))jV=k;
         }
-        if(jL>=0&&jQ>=0){hIdx=i;cLinha=jL;cQtd=jQ;temItemContrato=jI;break;}
+        if(jL>=0&&jQ>=0&&jItem>=0){hIdx=i;cItem=jItem;cL=jL;cU=jU;cD=jD;cP=jP;cQ=jQ;cV=jV;break;}
       }
-      if(hIdx<0||cQtd<0||!temItemContrato)continue; // sem assinatura de boletim consolidado → próxima aba
-      var porItem={};
-      rows.slice(hIdx+1).forEach(function(r){if(!r)return;var li=parseInt(r[cLinha]),q=parseFloat(r[cQtd]);if(!isNaN(li)&&!isNaN(q))porItem[String(li)]=(porItem[String(li)]||0)+q;});
-      if(Object.keys(porItem).length)return porItem;
+      if(hIdx<0)continue; // sem assinatura de boletim consolidado → próxima aba
+      var out=[],total=0;
+      rows.slice(hIdx+1).forEach(function(r){if(!r)return;
+        var q=(typeof r[cQ]==='number')?r[cQ]:parseFloat(r[cQ]);if(isNaN(q)||q===0)return;
+        var pu=(cP>=0&&typeof r[cP]==='number')?r[cP]:NaN;
+        var v=(cV>=0&&typeof r[cV]==='number')?r[cV]:(isNaN(pu)?NaN:q*pu);if(isNaN(v))return;
+        var un=cU>=0?String(r[cU]==null?'':r[cU]).trim():'';
+        var li=cL>=0?parseInt(r[cL]):NaN;
+        out.push({it:isNaN(li)?'':li,desc:cD>=0?String(r[cD]==null?'':r[cD]).trim():'',un:un,pu:isNaN(pu)?(q?v/q:0):pu,q:q,v:Math.round(v*100)/100,t:bmTipoDeUnid(un)});
+        total+=v;
+      });
+      if(out.length)return {rows:out,total:Math.round(total*100)/100};
     }
     return null; // não é o boletim consolidado (é arquivo de referência/base de cálculo)
-  }catch(e){console.warn('bmParseLinhaQtd:',e);return null}
+  }catch(e){console.warn('bmParseBoletim:',e);return null}
 }
 // Meses-alvo do BM conforme o filtro: 1..11 selecionados = esses meses (soma); 0 ou 12 = TODOS os
 // meses que têm BM na pasta ou ponto (soma total). Cada mês entra uma vez (sem janela consecutiva).
 function bmMesesAlvo(){
   var arr=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)arr=Array.from(SM);}catch(e){}
   if(arr.length&&arr.length<12)return arr.sort(function(a,b){return a-b});
-  var set={},qtdMes=lsg('cbsi-v15-bm-mesqtd',{});
-  Object.keys(qtdMes).forEach(function(m){set[+m]=1});
+  var set={},md=lsg('cbsi-v15-bm-mesdata',{});
+  Object.keys(md).forEach(function(m){set[+m]=1});
   try{(ROBO_LANC||[]).forEach(function(l){var d=dataBR(l.data);if(d){var m=d.getMonth()+1;if(d.getDate()>=21){m++;if(m>12)m=1;}set[m]=1;}});}catch(e){}
   return Object.keys(set).map(Number).sort(function(a,b){return a-b});
 }
 // Cálculo do BM para uma lista de meses (SOMA). Cada mês usa o BM da pasta (arquivo do mês);
 // mês sem arquivo mas com ponto entra como PRÉVIA (só HH, via espelho). Fonte única p/ aba BM e Dashboard.
 function bmCalcMes(meses){
-  var BMv=(typeof getBM==='function')?getBM():BM;
+  var md=lsg('cbsi-v15-bm-mesdata',{});
   var ano=(typeof Y!=='undefined')?Y:2026;
-  var qtdMes=lsg('cbsi-v15-bm-mesqtd',{});
-  var qAcc={},hhPonto={},mesesFile=[],mesesPonto=[];
+  var agg={},total=0,mesesFile=[],mesesPonto=[];
+  var addRow=function(key,base,q,v){if(!agg[key])agg[key]={i:{it:base.it,d:base.desc||base.d||'',t:base.t,u:base.un||base.u||'',pu:base.pu},q:0,v:0};agg[key].q+=q;agg[key].v+=v;};
   (meses||[]).forEach(function(m){
-    var fq=qtdMes[m];
-    if(fq&&Object.keys(fq).length){mesesFile.push(m);Object.keys(fq).forEach(function(it){qAcc[String(it)]=(qAcc[String(it)]||0)+(+fq[it]||0);});}
-    else{
-      var regs=[];try{var p=periodoDaCompetencia(m,ano);regs=(ROBO_LANC||[]).filter(function(l){var d=dataBR(l.data);return d>=p.ini&&d<=p.fim});}catch(e){}
+    var d=md[m];
+    if(d&&d.rows&&d.rows.length){mesesFile.push(m);total+=(+d.total||0);
+      d.rows.forEach(function(r){addRow(String(m)+':'+(r.it||r.desc),r,r.q,r.v);});
+    } else {
+      var regs=[];try{var p=periodoDaCompetencia(m,ano);regs=(ROBO_LANC||[]).filter(function(l){var dd=dataBR(l.data);return dd>=p.ini&&dd<=p.fim});}catch(e){}
       if(regs.length){mesesPonto.push(m);
         try{var con=roboConsolidaRegs(regs);Object.keys(con.porFunc).forEach(function(f){if(f.indexOf('(sem De×Para')===0)return;var a=con.porFunc[f];
-          [['HN',a.hn],['HE50',a.he50],['HE100',a.he100],['HE150',a.he150],['ADN',a.adn]].forEach(function(par){var it=bmItemDe(f,par[0]);if(it)hhPonto[String(it.it)]=(hhPonto[String(it.it)]||0)+(+par[1]||0);});});}catch(e){}
+          [['HN',a.hn],['HE50',a.he50],['HE100',a.he100],['HE150',a.he150],['ADN',a.adn]].forEach(function(par){var it=bmItemDe(f,par[0]);if(it&&par[1]){var v=(+par[1])*(+it.pu||0);total+=v;addRow(String(m)+':'+it.it,{it:it.it,desc:it.d,un:it.u,t:'HH',pu:it.pu},+par[1],v);}});});}catch(e){}
       }
     }
   });
-  var totalMes=0,rows=(BMv||[]).map(function(i){
-    var q=(+qAcc[String(i.it)]||0)+(i.t==='HH'?(+hhPonto[String(i.it)]||0):0);
-    var v=q*(+i.pu||0);totalMes+=v;return{i:i,q:q,v:v};
-  });
+  var rows=Object.keys(agg).map(function(k){return agg[k];}).sort(function(a,b){return ((+a.i.it)||0)-((+b.i.it)||0)});
   var byT=function(t){return rows.filter(function(r){return r.i.t===t}).reduce(function(s,r){return s+r.v},0)};
+  var totalMes=Math.round(total*100)/100;
   var MN=(typeof MESES_NOMES!=='undefined')?MESES_NOMES:['','JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
   var compLabel,periodo;
   if((meses||[]).length===1){compLabel=MN[meses[0]]+'-'+ano;try{periodo=periodoDaCompetencia(meses[0],ano).desc}catch(e){periodo='—'}}
@@ -7251,7 +7267,7 @@ function bmRenderNovo(){
     var execPct=totalContrato>0?(totalAcum/totalContrato*100).toFixed(1):'0';
     var hhVal=C.hhVal,vbVal=C.vbVal,vmVal=C.vmVal,svVal=C.svVal;
     var pctT=function(v){return totalMes>0?Math.round(v/totalMes*100):0};
-    var cnt=function(t){return BMv.filter(function(i){return i.t===t}).length};
+    var cnt=function(t){return rows.filter(function(r){return r.i.t===t}).length};
     var hoje=(function(){try{return new Date().toLocaleDateString('pt-BR')}catch(e){return ''}})();
     var fonteNota=C.fonte;
     var rowsHTML=rows.map(function(r){var i=r.i;var tc=i.t==='HH'?'bm-hh':i.t==='VB'?'bm-vb':i.t==='VM'?'bm-vm':'bm-sv';var valAc=r.v;
@@ -8423,32 +8439,32 @@ function driveBmsAuto(files){
   var ehBase=function(n){return /PRODU[ÇC][ÃA]O|\bM²\b|MEMORIAL|QQP|ANDAIME|CANTEIRO|FORNECEDOR|ITENS_MEDIDOS|SGC/i.test(n);};
   var cand=(files||[]).filter(function(f){return /\.(xlsx?|xls)$/i.test(f.name)&&!ehBase(f.name)&&/HH/i.test(f.name)&&/EQUIP/i.test(f.name)&&bmMesDeArquivo(f);});
   if(!cand.length)return;
-  var cache=lsg('cbsi-v15-bm-filecache',{}); // {id:{marca,mes,mod,itens|null,nome}}
+  var cache=lsg('cbsi-v15-bm-filecache',{}); // {id:{marca,mes,mod,data:{rows,total}|null,nome}}
   ensureXLSX().then(function(){
     var seq=Promise.resolve(),mudou=0;
     cand.forEach(function(f){
       var marca=f.id+'|'+f.modifiedTime;
-      if(cache[f.id]&&cache[f.id].marca===marca)return; // j\u00e1 analisado e sem mudan\u00e7a
+      if(cache[f.id]&&cache[f.id].marca===marca&&cache[f.id].data!==undefined)return; // j\u00e1 analisado e sem mudan\u00e7a
       seq=seq.then(function(){
         return driveDownload(f.id).then(function(buf){
-          var porItem=bmParseLinhaQtd(buf); // null se n\u00e3o for o boletim consolidado
-          cache[f.id]={marca:marca,mes:bmMesDeArquivo(f),mod:f.modifiedTime||'',itens:(porItem&&Object.keys(porItem).length)?porItem:null,nome:f.name};
+          var d=bmParseBoletim(buf); // {rows,total} ou null se n\u00e3o for o boletim consolidado
+          cache[f.id]={marca:marca,mes:bmMesDeArquivo(f),mod:f.modifiedTime||'',data:(d&&d.rows&&d.rows.length)?d:null,nome:f.name};
           mudou++;lss('cbsi-v15-bm-filecache',cache);
-        }).catch(function(e){console.warn('BMS '+f.name,e);cache[f.id]={marca:marca,mes:bmMesDeArquivo(f),mod:f.modifiedTime||'',itens:null,nome:f.name,erro:1};lss('cbsi-v15-bm-filecache',cache);});
+        }).catch(function(e){console.warn('BMS '+f.name,e);cache[f.id]={marca:marca,mes:bmMesDeArquivo(f),mod:f.modifiedTime||'',data:null,nome:f.name,erro:1};lss('cbsi-v15-bm-filecache',cache);});
       });
     });
     seq.then(function(){
       // reconstr\u00f3i o mapa por m\u00eas: para cada m\u00eas, o boletim consolidado com modifiedTime MAIS RECENTE (n\u00e3o soma vers\u00f5es)
-      var best={},qtdMes={};
-      Object.keys(cache).forEach(function(id){var c=cache[id];if(!c||!c.itens||!c.mes)return;if(!best[c.mes]||(c.mod||'')>(best[c.mes].mod||'')){best[c.mes]={mod:c.mod,itens:c.itens,nome:c.nome};}});
-      Object.keys(best).forEach(function(m){qtdMes[m]=best[m].itens;});
-      lss('cbsi-v15-bm-mesqtd',qtdMes);
-      DRIVE_CFG.status.bmsImport={quando:new Date().toLocaleString('pt-BR'),meses:Object.keys(qtdMes).length,analisados:mudou};driveSave();
+      var best={},mesData={};
+      Object.keys(cache).forEach(function(id){var c=cache[id];if(!c||!c.data||!c.mes)return;if(!best[c.mes]||(c.mod||'')>(best[c.mes].mod||'')){best[c.mes]={mod:c.mod,data:c.data,nome:c.nome};}});
+      Object.keys(best).forEach(function(m){mesData[m]={rows:best[m].data.rows,total:best[m].data.total,arquivo:best[m].nome,mod:best[m].mod};});
+      lss('cbsi-v15-bm-mesdata',mesData);
+      DRIVE_CFG.status.bmsImport={quando:new Date().toLocaleString('pt-BR'),meses:Object.keys(mesData).length,analisados:mudou};driveSave();
       if(mudou){
         try{renderBM()}catch(e){}
         try{if(typeof R==='function')R()}catch(e){}
-        rlog('Drive BMS','Ler boletim consolidado por m\u00eas',Object.keys(qtdMes).length+' meses (analisados: '+mudou+')');
-        rtoast('\ud83d\udcb0 BM atualizado: '+Object.keys(qtdMes).length+' m\u00eas(es) com boletim consolidado na pasta');
+        rlog('Drive BMS','Ler boletim consolidado por m\u00eas',Object.keys(mesData).length+' meses (analisados: '+mudou+')');
+        rtoast('\ud83d\udcb0 BM atualizado: '+Object.keys(mesData).length+' m\u00eas(es) com boletim consolidado na pasta');
       }
     });
   }).catch(function(e){console.warn('BMS auto:',e)});
