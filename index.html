@@ -7206,10 +7206,17 @@ function bmParseBoletim(buf){
 // meses que têm BM na pasta ou ponto (soma total). Cada mês entra uma vez (sem janela consecutiva).
 function bmMesesAlvo(){
   var arr=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)arr=Array.from(SM);}catch(e){}
-  if(arr.length&&arr.length<12)return arr.sort(function(a,b){return a-b});
-  var set={},md=lsg('cbsi-v15-bm-mesdata',{});
-  Object.keys(md).forEach(function(m){set[+m]=1});
-  try{(ROBO_LANC||[]).forEach(function(l){var d=dataBR(l.data);if(d){var m=d.getMonth()+1;if(d.getDate()>=21){m++;if(m>12)m=1;}set[m]=1;}});}catch(e){}
+  var md=lsg('cbsi-v15-bm-mesdata',{});
+  var comBoletim=Object.keys(md).map(Number);
+  if(arr.length&&arr.length<12){
+    // seleção explícita: usa os meses escolhidos que TÊM boletim; se nenhum tiver, mantém a seleção (prévia por ponto)
+    var comBM=arr.filter(function(m){return md[m]&&md[m].rows;});
+    return (comBM.length?comBM:arr).sort(function(a,b){return a-b});
+  }
+  // Todos / nenhum = SOMA apenas dos meses com boletim na pasta (não mistura prévia por ponto)
+  if(comBoletim.length)return comBoletim.sort(function(a,b){return a-b});
+  // fallback (nenhum boletim ainda lido): usa meses com ponto para não ficar vazio
+  var set={};try{(ROBO_LANC||[]).forEach(function(l){var d=dataBR(l.data);if(d){var m=d.getMonth()+1;if(d.getDate()>=21){m++;if(m>12)m=1;}set[m]=1;}});}catch(e){}
   return Object.keys(set).map(Number).sort(function(a,b){return a-b});
 }
 // Cálculo do BM para uma lista de meses (SOMA). Cada mês usa o BM da pasta (arquivo do mês);
@@ -8381,11 +8388,12 @@ function driveListRec(folderId,depth){
 // monitor de todas as pastas mapeadas (roda no botão e no automático)
 function driveMonitor(){
   if(!DRIVE_CFG.apiKey)return Promise.resolve();
-  var chaves=['ponto','rdc','bms','pint','andaimes'];
+  var chaves=['bms','ponto','rdc','pint','andaimes']; // BM primeiro: boletins aparecem em segundos, não depois do ponto lento
   var seq=Promise.resolve();
   chaves.forEach(function(ch){
     seq=seq.then(function(){
-      return driveListRec(DRIVE_CFG.pastas[ch],(ch==='andaimes'||ch==='ponto'||ch==='bms')?4:2).then(function(files){
+      // bms: profundidade 2 basta (boletim consolidado fica na RAIZ do mês); ponto/andaimes precisam descer mais
+      return driveListRec(DRIVE_CFG.pastas[ch],(ch==='andaimes'||ch==='ponto')?4:2).then(function(files){
         DRIVE_CFG.status[ch]={quando:new Date().toLocaleString('pt-BR'),qtde:files.length,
           ult:files.slice().sort(function(a,b){return (b.modifiedTime||'')<(a.modifiedTime||'')?-1:1})[0]};
         driveSave();
