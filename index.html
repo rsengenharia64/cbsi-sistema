@@ -6465,6 +6465,24 @@ window.heAuthLote=function(rec){
   rtoast('🔐 De Acordo HE: '+(rec?'reconhecidas':'não reconhecidas')+' '+n+' HE 50% do período em tela.');
   renderRobo();
 };
+// SELEÇÃO POR COLABORADOR: reconhece/não reconhece TODOS os dias com HE 50% de um colaborador (por id) no período.
+// Uso: cliente aceita pagar HE do colaborador A/B mas não do C/D → seleciona quem entra na cobrança e o sistema recalcula.
+window.heAuthColab=function(id,rec){
+  var regs=(window.FA&&window.FA.regs)?window.FA.regs:ROBO_LANC;var n=0,nome='';
+  regs.forEach(function(l){if(String(l.id)===String(id)&&(+l.he50ap||0)>0.001){HE_AUTH[heKey(l)]=HE_AUTH[heKey(l)]||{};HE_AUTH[heKey(l)].rec=!!rec;n++;nome=l.nome||nome}});
+  heAuthSave();aplicarDeAcordoHE();roboSave();
+  rtoast('🔐 De Acordo HE · '+(nome||('id '+id))+': '+(rec?'incluído':'excluído')+' da cobrança ('+n+' dia(s) de HE).');
+  renderRobo();
+};
+// SELEÇÃO POR FUNÇÃO: reconhece/não reconhece TODOS os dias com HE 50% de uma função (funcQQP) no período.
+window.heAuthFunc=function(funcEnc,rec){
+  var func=decodeURIComponent(funcEnc);
+  var regs=(window.FA&&window.FA.regs)?window.FA.regs:ROBO_LANC;var n=0;
+  regs.forEach(function(l){var f=l.funcQQP||l.cargo||'';if(f===func&&(+l.he50ap||0)>0.001){HE_AUTH[heKey(l)]=HE_AUTH[heKey(l)]||{};HE_AUTH[heKey(l)].rec=!!rec;n++}});
+  heAuthSave();aplicarDeAcordoHE();roboSave();
+  rtoast('🔐 De Acordo HE · função '+func+': '+(rec?'incluída':'excluída')+' da cobrança ('+n+' dia(s) de HE).');
+  renderRobo();
+};
 // COMANDO DO GESTOR: aplica todas as autorizações e integra (recalcula totais/dashboard/BM)
 window.heAuthAplicar=function(){
   aplicarDeAcordoHE();roboSave();
@@ -6710,6 +6728,47 @@ function deAcordoHTML(FA){
     +'<button onclick="heAuthAplicar()" style="font-size:9px;font-weight:700;padding:4px 8px;background:var(--ca);color:#fff;border:none;border-radius:5px;cursor:pointer">↻ Aplicar e recalcular</button>'
     +'</div>';
   if(!lst.length){h+='<div style="font-size:9px;color:var(--dm)">Nenhuma HE 50% apurada no período selecionado.</div></div>';return h}
+  // ---- SELEÇÃO POR FUNÇÃO / COLABORADOR (quem entra na cobrança) ----
+  // Agrega a HE apurada × paga por função e por colaborador; um clique inclui/exclui todos os dias.
+  var porFunc={},porColab={};
+  lst.forEach(function(l){
+    var f=l.funcQQP||l.cargo||'(sem função)';
+    var af=porFunc[f]=porFunc[f]||{apu:0,pag:0};af.apu+=(+l.he50ap||0);af.pag+=(+l.he50||0);
+    var id=l.id||l.mat||l.nome;
+    var ac=porColab[id]=porColab[id]||{id:id,nome:l.nome||l.mat||id,func:f,apu:0,pag:0,dias:0};
+    ac.apu+=(+l.he50ap||0);ac.pag+=(+l.he50||0);ac.dias++;
+  });
+  function estado(apu,pag){return pag<=0.001?'nao':(pag>=apu-0.001?'sim':'parc')}
+  function chip(on){return on==='sim'?'✔ paga':(on==='parc'?'◑ parcial':'✖ fora');}
+  function chipCor(on){return on==='sim'?'var(--gn)':(on==='parc'?'var(--am,#c90)':'var(--rd)');}
+  h+='<details open style="margin-bottom:6px"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🎯 Selecionar quem entra na cobrança — por função e por colaborador</summary>';
+  h+='<div style="font-size:8px;color:var(--dm);margin:3px 0 5px">Marque a função ou o colaborador que o cliente reconhece. Desmarcar exclui todos os dias de HE daquele item; o sistema recalcula o valor a cobrar. Ajuste fino continua no registro dia a dia abaixo.</div>';
+  // por função
+  h+='<div style="font-size:9px;font-weight:700;color:var(--ca);margin:4px 0 2px">Por função ('+Object.keys(porFunc).length+')</div>';
+  h+='<div style="max-height:150px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">';
+  Object.keys(porFunc).sort().forEach(function(f){
+    var a=porFunc[f],st=estado(a.apu,a.pag);
+    h+='<tr style="border-bottom:1px solid var(--bd)">'
+     +'<td style="text-align:center;width:26px"><input type="checkbox" '+(st==='sim'?'checked':'')+' onchange="heAuthFunc(\''+encodeURIComponent(f)+'\',this.checked)"></td>'
+     +'<td style="text-align:left;padding:2px">'+f+'</td>'
+     +'<td style="text-align:right;color:var(--dm)">apur. '+h2hm(a.apu)+'</td>'
+     +'<td style="text-align:right;font-weight:700;color:'+chipCor(st)+'">'+chip(st)+' '+h2hm(a.pag)+'</td>'
+     +'</tr>';
+  });
+  h+='</table></div>';
+  // por colaborador
+  h+='<div style="font-size:9px;font-weight:700;color:var(--ca);margin:6px 0 2px">Por colaborador ('+Object.keys(porColab).length+')</div>';
+  h+='<div style="max-height:190px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">';
+  Object.keys(porColab).map(function(k){return porColab[k]}).sort(function(x,y){return x.nome<y.nome?-1:1}).forEach(function(c){
+    var st=estado(c.apu,c.pag);
+    h+='<tr style="border-bottom:1px solid var(--bd)">'
+     +'<td style="text-align:center;width:26px"><input type="checkbox" '+(st==='sim'?'checked':'')+' onchange="heAuthColab(\''+String(c.id).replace(/'/g,"\\'")+'\',this.checked)"></td>'
+     +'<td style="text-align:left;padding:2px">'+c.nome+' <span style="color:var(--dm)">· '+c.func+' · '+c.dias+'d</span></td>'
+     +'<td style="text-align:right;color:var(--dm)">apur. '+h2hm(c.apu)+'</td>'
+     +'<td style="text-align:right;font-weight:700;color:'+chipCor(st)+'">'+chip(st)+' '+h2hm(c.pag)+'</td>'
+     +'</tr>';
+  });
+  h+='</table></div></details>';
   var byC={};lst.forEach(function(l){var k=l.nome||l.mat||l.id;(byC[k]=byC[k]||[]).push(l)});
   h+='<details><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">📋 Registro de HE 50% por colaborador — autorizar dia a dia ('+Object.keys(byC).length+' colaboradores · '+lst.length+' dias)</summary>';
   h+='<div style="max-height:340px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
@@ -8940,8 +8999,8 @@ window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:ca
   lancCount:function(){return ROBO_LANC.length},filtro:function(){var f=roboFiltroAtivo();return{n:f.regs.length,rotulo:f.rotulo,modo:f.modo}},ptedit:function(){return PT_EDIT},heauth:function(){return HE_AUTH}};
 console.log('🤖 Robô de Ponto + Andaimes carregados (add-on v16)');
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=74;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='74 · 04/08/2026 · HE ancorada 07-17';  // rótulo exibido no badge
+var CBSI_VER=75;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='75 · 04/08/2026 · seleção HE por função/colaborador';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
