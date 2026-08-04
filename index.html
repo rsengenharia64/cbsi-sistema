@@ -8332,7 +8332,7 @@ function _pdRot(n){return n<=1?'Mês':(n>=12?'Ano':'Período ('+n+' meses)')}
 function _pdSetCard(dash,lbl,val,sub){
   [].slice.call(dash.querySelectorAll('.kp')).forEach(function(kp){
     var kl=kp.querySelector('.kl');if(!kl||kl.textContent.trim().indexOf(lbl)!==0)return;
-    var kv=kp.querySelector('.kv');if(kv&&val!=null)kv.textContent=val;
+    var kv=kp.querySelector('.kv');if(kv&&val!=null)kv.innerHTML=val;
     var ks=kp.querySelector('.ks');if(ks&&sub!=null)ks.innerHTML=sub;
   });
 }
@@ -8367,8 +8367,9 @@ function fixDashPeriodo(){
     var lpPct=_pdPct(agg.lr,agg.lp), lAcum=_pdPct(agg.lr,mm.laudoMeta);
     var aPct=_pdPct(agg.ar,agg.ap),  aAcum=_pdPct(agg.ar,mm.m2Meta);
     // TOPO — número do período + % · e a META TOTAL do ano com o % que os meses selecionados representam dela
-    _pdSetCard(dash,'Laudos PIN',agg.lr+'/'+agg.lp,'<b style="color:var(--cs)">'+lpPct+'% período</b> · meta anual '+mm.laudoMeta+' ('+lAcum+'% da meta)');
-    _pdSetCard(dash,'Área m² PIN',_pdFmt(agg.ar),'<b style="color:var(--co)">'+aPct+'% período</b> · meta anual '+_pdFmt(mm.m2Meta)+' m² ('+aAcum+'% da meta)');
+    var lAcumC=_pdPct(mm.laudoExec,mm.laudoMeta), aAcumC=_pdPct(mm.m2Real,mm.m2Meta);
+    _pdSetCard(dash,'Laudos PIN',agg.lr+'/'+agg.lp+' <span style="font-size:11px;font-weight:700;color:var(--dm)">no período</span>','<b style="color:var(--cs)">'+lpPct+'% da meta do período</b> · <span style="color:var(--dm)">acumulado do contrato: <b>'+mm.laudoExec+'/'+mm.laudoMeta+'</b> ('+lAcumC+'%)</span>');
+    _pdSetCard(dash,'Área m² PIN',_pdFmt(agg.ar)+' <span style="font-size:11px;font-weight:700;color:var(--dm)">no período</span>','<b style="color:var(--co)">'+aPct+'% da meta do período</b> · <span style="color:var(--dm)">acum. do contrato: <b>'+_pdFmt(mm.m2Real)+'/'+_pdFmt(mm.m2Meta)+' m²</b> ('+aAcumC+'%)</span>');
     // PROGRAMAÇÃO TAC — paradas do(s) mês(es) selecionado(s)
     try{
       var hoje=(new Date(new Date().toDateString()));
@@ -8382,7 +8383,7 @@ function fixDashPeriodo(){
       _pdSetCard(dash,'Realizadas',String(done),pctD+'% concluído');
       _pdSetCard(dash,'Em Curso',String(act),'em execução agora');
       _pdSetCard(dash,'Programadas',String(plan),'a executar');
-      _pdSetCard(dash,'Laudos Pintura',agg.lr+'/'+agg.lp,'<b>'+lpPct+'% período</b> · meta anual '+mm.laudoMeta+' ('+lAcum+'% da meta)');
+      _pdSetCard(dash,'Laudos Pintura',agg.lr+'/'+agg.lp+' <span style="font-size:11px;font-weight:700;color:var(--dm)">no período</span>','<b>'+lpPct+'% da meta do período</b> · <span style="color:var(--dm)">acum. contrato: <b>'+mm.laudoExec+'/'+mm.laudoMeta+'</b> ('+_pdPct(mm.laudoExec,mm.laudoMeta)+'%)</span>');
       // barra empilhada (✓/⚡/📋) — atualiza rótulos e proporções
       var tot=Math.max(tac.length,1);
       [].slice.call(dash.querySelectorAll('div')).forEach(function(d){
@@ -8390,6 +8391,15 @@ function fixDashPeriodo(){
         if(/^✓\s*\d+$/.test(tx)&&d.children.length===0){d.textContent='✓ '+done;var w=d.closest('div[style*="flex:"]');if(w)w.style.flex=done||0.001;}
         else if(/^⚡\s*\d+$/.test(tx)&&d.children.length===0){d.textContent='⚡ '+act;var w2=d.closest('div[style*="flex:"]');if(w2)w2.style.flex=Math.max(act,1);}
         else if(/^📋\s*\d+$/.test(tx)&&d.children.length===0){d.textContent='📋 '+plan;var w3=d.closest('div[style*="flex:"]');if(w3)w3.style.flex=plan||0.001;}
+      });
+    }catch(e){}
+    // PADRONIZAÇÃO DOS RÓTULOS DOS DONUTS (metas): deixa explícito período × acumulado do contrato.
+    // "LAUDOS/ÁREA PIN ACUM." → "... ACUM. (CONTRATO)"; "... PERÍODO (N MESES)" → "... PERÍODO SELEC. (N MESES)".
+    try{
+      [].slice.call(dash.querySelectorAll('*')).forEach(function(el){
+        if(el.children.length)return;var t=(el.textContent||'').trim();
+        if(/PIN ACUM\.?$/i.test(t)&&!/CONTRATO/i.test(t)){el.textContent=t.replace(/ACUM\.?$/i,'ACUM. (CONTRATO)');}
+        else if(/PER[ÍI]ODO\s*\(\d+\s*MES/i.test(t)&&!/SELEC/i.test(t)){el.textContent=t.replace(/PER[ÍI]ODO/i,'PERÍODO SELEC.');}
       });
     }catch(e){}
     // BLOCO "PINTURA — DADOS REAIS": LAUDOS e M² EXEC passam a ser do período
@@ -8999,8 +9009,8 @@ window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:ca
   lancCount:function(){return ROBO_LANC.length},filtro:function(){var f=roboFiltroAtivo();return{n:f.regs.length,rotulo:f.rotulo,modo:f.modo}},ptedit:function(){return PT_EDIT},heauth:function(){return HE_AUTH}};
 console.log('🤖 Robô de Ponto + Andaimes carregados (add-on v16)');
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=75;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='75 · 04/08/2026 · seleção HE por função/colaborador';
+var CBSI_VER=76;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='76 · 04/08/2026 · rótulos período × acumulado';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
