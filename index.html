@@ -7295,7 +7295,9 @@ function bmRenderNovo(){
     var hoje=(function(){try{return new Date().toLocaleDateString('pt-BR')}catch(e){return ''}})();
     var fonteNota=C.fonte;
     var rowsHTML=rows.map(function(r){var i=r.i;var tc=i.t==='HH'?'bm-hh':i.t==='VB'?'bm-vb':i.t==='VM'?'bm-vm':'bm-sv';var valAc=r.v;
-      return '<tr><td>'+i.it+'</td><td style="text-align:left;max-width:180px;font-size:8px">'+i.d+'</td><td><span class="bm-type '+tc+'">'+(i.t==='VM'?'VB/M':i.t)+'</span></td><td>'+i.u+'</td><td>'+_fR(i.pu)+'</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:'+(r.q>0?'var(--cs)':'var(--dm)')+'">'+_fd(r.q,2)+'</td><td>'+_fd(r.q,2)+'</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:'+(r.v>0?'var(--gn)':'var(--dm)')+'">'+_fR(r.v)+'</td><td>'+_fR(valAc)+'</td><td style="color:'+(valAc>0?'var(--rd)':'var(--dm)')+'">'+_fR(-valAc)+'</td></tr>';
+      // SALDO por linha = saldo do contrato distribuído proporcionalmente ao valor medido da linha (Σ = saldo do contrato)
+      var saldoLin=totalMes>0?(saldo*r.v/totalMes):0;
+      return '<tr><td>'+i.it+'</td><td style="text-align:left;max-width:180px;font-size:8px">'+i.d+'</td><td><span class="bm-type '+tc+'">'+(i.t==='VM'?'VB/M':i.t)+'</span></td><td>'+i.u+'</td><td>'+_fR(i.pu)+'</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:'+(r.q>0?'var(--cs)':'var(--dm)')+'">'+_fd(r.q,2)+'</td><td>'+_fd(r.q,2)+'</td><td style="color:var(--dm)">0,00</td><td style="font-weight:700;color:'+(r.v>0?'var(--gn)':'var(--dm)')+'">'+_fR(r.v)+'</td><td>'+_fR(valAc)+'</td><td style="font-weight:700;color:'+(saldoLin>=0?'var(--gn)':'var(--rd)')+'">'+_fR(saldoLin)+'</td></tr>';
     }).join('');
     document.getElementById('p-bm').innerHTML=
      '<div class="g g5" style="margin-bottom:6px">'
