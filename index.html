@@ -9008,9 +9008,91 @@ try{if(typeof buildDev==='function')buildDev()}catch(e){console.warn('buildDev r
 window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,calcDiaCliente:calcDiaCliente,ensurePdfJs:ensurePdfJs,
   lancCount:function(){return ROBO_LANC.length},filtro:function(){var f=roboFiltroAtivo();return{n:f.regs.length,rotulo:f.rotulo,modo:f.modo}},ptedit:function(){return PT_EDIT},heauth:function(){return HE_AUTH}};
 console.log('🤖 Robô de Ponto + Andaimes carregados (add-on v16)');
+
+// ===== INDICADORES COMPORTAMENTAIS — RELIGADO À BASE REAL DO ESPELHO DE PONTO =====
+// Substitui a simulação por-nome do renderEfet base. Conta as ocorrências REAIS registradas
+// nas Observações de cada lançamento do espelho (Atestado / Falta / Atraso / Saída antecipada),
+// filtrando pelos meses selecionados. Sem espelho importado → painel zerado (não estima nada).
+function roboAbsReais(meses){
+  var L=(typeof ROBO_LANC!=='undefined')?ROBO_LANC:[];
+  var useM=meses&&meses.length&&meses.length<12;
+  var map={};
+  L.forEach(function(l){
+    if(useM){var mo=+String(l.data||'').split('/')[1];if(meses.indexOf(mo)<0)return;}
+    var key=normTxt(l.nome||l.mat||l.id||'');if(!key)return;
+    var a=map[key]=map[key]||{atestados:0,atrasos:0,saidasCedo:0,faltas:0,dias:0};
+    var o=normTxt(l.obs||'');
+    if(/ATESTADO/.test(o))a.atestados++;
+    else if(/FALTA|AUSENC/.test(o))a.faltas++;   // atestado e falta são exclusivos por dia
+    if(/ATRASO/.test(o))a.atrasos++;
+    if(/SAIDA/.test(o))a.saidasCedo++;
+    a.dias++;
+  });
+  return map;
+}
+function efetComportamentalReal(){
+  var host=document.getElementById('p-efet');if(!host)return;
+  var card=[].slice.call(host.querySelectorAll('.cd')).find(function(c){var t=c.querySelector('.ct');return t&&/Indicadores Comportamentais/i.test(t.textContent||'')});
+  if(!card)return;
+  var meses=(function(){try{return aggSelMeses().meses}catch(e){return[]}})();
+  var temPonto=(typeof ROBO_LANC!=='undefined'&&ROBO_LANC.length>0);
+  var abs=roboAbsReais(meses);
+  var EFL=(typeof EF!=='undefined'&&EF)?EF:[];
+  var DCx=(typeof DC!=='undefined')?DC:{};
+  var MN=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var per=(meses&&meses.length&&meses.length<12)?('período '+meses.map(function(m){return MN[m-1]}).join('+')):'todo o ponto importado';
+  function kp(l,v,s,c){return '<div class="kp" style="border-top:2px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+'">'+v+'</div><div class="ks">'+s+'</div></div>';}
+  var h='<button class="fs-btn" onclick="toggleFullscreen(this)"></button>'
+    +'<div class="ct" style="color:var(--ca)">📊 Indicadores Comportamentais — Absenteísmo e Pontualidade <span style="font-size:8px;font-weight:400;color:var(--dm)">· fonte: espelho de ponto real ('+per+')</span></div>'
+    +'<div style="font-size:8px;color:var(--dm);margin-bottom:6px">Score: 100 base − Atestados(×15) − Atrasos(×10) − Saídas antecipadas(×8) − Faltas(×20). Ocorrências reais das Observações do ponto (não estimadas).</div>';
+  if(!temPonto){
+    h+='<div style="background:rgba(255,173,0,.12);border:1px solid var(--ca);border-radius:6px;padding:10px;font-size:10px;color:var(--tx);line-height:1.5">⚠️ <b>Sem espelho de ponto importado neste período.</b><br>Os indicadores comportamentais só aparecem com o ponto real carregado (aba <b>Espelho Ponto</b> ou robô do Drive). Enquanto não houver ponto, não exibimos número estimado — evita marcar colaborador com dado que não é real.</div>';
+    card.innerHTML=h;return;
+  }
+  var data=EFL.map(function(e){
+    var a=abs[normTxt(e.n||'')]||{atestados:0,atrasos:0,saidasCedo:0,faltas:0};
+    var score=Math.max(0,100-a.atestados*15-a.atrasos*10-a.saidasCedo*8-a.faltas*20);
+    return {n:e.n,d:e.d,f:e.f,atestados:a.atestados,atrasos:a.atrasos,saidasCedo:a.saidasCedo,faltas:a.faltas,score:score};
+  });
+  var comAt=data.filter(function(x){return x.atestados>0}),comAtr=data.filter(function(x){return x.atrasos>0}),
+      comSc=data.filter(function(x){return x.saidasCedo>0}),comFl=data.filter(function(x){return x.faltas>0});
+  var top100=data.filter(function(x){return x.score===100}),emTrat=data.filter(function(x){return x.score<70});
+  var n=EFL.length||1,pc=function(x){return Math.round(x/n*100)};
+  h+='<div class="g g" style="grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:8px">'
+    +kp('Atestados',comAt.length,pc(comAt.length)+'% do efetivo','var(--rd)')
+    +kp('Atrasos',comAtr.length,pc(comAtr.length)+'% do efetivo','var(--ca)')
+    +kp('Saída Antecip.',comSc.length,pc(comSc.length)+'% do efetivo','var(--co)')
+    +kp('Faltas',comFl.length,pc(comFl.length)+'% do efetivo','var(--rd)')
+    +kp('⭐ Score 100%',top100.length,pc(top100.length)+'% do efetivo','var(--gn)')
+    +kp('Em Tratativa',emTrat.length,'Score &lt; 70%','var(--rd)')
+    +'</div>';
+  h+='<div class="g g2" style="gap:4px">';
+  h+='<div style="border:1px solid rgba(0,196,140,.2);border-radius:6px;padding:6px;background:rgba(0,196,140,.03)">'
+    +'<div style="font-size:9px;font-weight:800;color:var(--gn);margin-bottom:4px">⭐ DESTAQUES — Score 100% ('+top100.length+' colaboradores)</div>'
+    +'<div style="max-height:150px;overflow-y:auto">'
+    +top100.slice(0,20).map(function(e){return '<div style="display:flex;align-items:center;gap:4px;padding:2px 0;border-bottom:1px solid rgba(0,196,140,.05);font-size:8px"><span style="color:var(--gn)">⭐</span><span style="flex:1;font-weight:600">'+e.n+'</span><span style="color:'+(DCx[e.d]||'var(--dm)')+';font-size:7px;font-weight:700">'+(e.d||'')+'</span><span style="color:var(--gn);font-weight:700;font-size:9px">100%</span></div>';}).join('')
+    +(top100.length>20?'<div style="text-align:center;font-size:7px;color:var(--dm);padding:4px">+'+(top100.length-20)+' colaboradores com score 100%</div>':'')
+    +(top100.length===0?'<div style="text-align:center;font-size:9px;color:var(--dm);padding:8px">Nenhum colaborador com 100% no período.</div>':'')
+    +'</div></div>';
+  h+='<div style="border:1px solid rgba(255,71,87,.2);border-radius:6px;padding:6px;background:rgba(255,71,87,.03)">'
+    +'<div style="font-size:9px;font-weight:800;color:var(--rd);margin-bottom:4px">⚠ LISTA PARA TRATATIVA — Score &lt; 70% ('+emTrat.length+' colaboradores)</div>'
+    +'<div style="max-height:150px;overflow-y:auto">'
+    +emTrat.sort(function(a,b){return a.score-b.score}).map(function(e){var items=[];if(e.atestados>0)items.push(e.atestados+'× atestado');if(e.atrasos>0)items.push(e.atrasos+'× atraso');if(e.saidasCedo>0)items.push(e.saidasCedo+'× saída antecip.');if(e.faltas>0)items.push(e.faltas+'× falta');return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid rgba(255,71,87,.05);font-size:8px"><span style="color:var(--rd);font-weight:900;font-size:10px;width:30px">'+e.score+'%</span><div style="flex:1"><div style="font-weight:700">'+e.n+'</div><div style="font-size:7px;color:var(--dm)">'+(e.f||'')+' · '+(e.d||'')+'</div></div><div style="font-size:7px;color:var(--rd)">'+items.join(' · ')+'</div></div>';}).join('')
+    +(emTrat.length===0?'<div style="text-align:center;color:var(--gn);font-size:9px;padding:8px">✅ Nenhum colaborador em tratativa neste período</div>':'')
+    +'</div></div>';
+  h+='</div>';
+  card.innerHTML=h;
+}
+// envelopa o renderEfet base: após ele montar a aba, substitui o painel comportamental pelo real
+if(typeof window.renderEfet==='function'){
+  var _origRenderEfet=window.renderEfet;
+  window.renderEfet=function(){var r=_origRenderEfet.apply(this,arguments);try{efetComportamentalReal()}catch(e){console.warn('comportamental real:',e)}return r;};
+}
+window.efetComportamentalReal=efetComportamentalReal;
+
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=76;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='76 · 04/08/2026 · rótulos período × acumulado';
+var CBSI_VER=77;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='77 · 04/08/2026 · indicadores comportamentais reais';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
