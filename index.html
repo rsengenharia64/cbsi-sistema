@@ -5856,7 +5856,16 @@ var ROBO_PARAMS_DEFAULT={
   calcRegra:'cliente',           // 'cliente' = regra de cobrança validada (planilha PONTO AJUSTADO) · 'rh' = coluna Conta/Valor do espelho
   he50Fator:100,                 // (legado) % global — substituído pela autorização por dia (módulo De Acordo HE)
   heAuthPadrao:'nao',            // De Acordo HE: 'nao' = HE 50% NÃO paga por padrão (só com autorização); 'sim' = paga por padrão
-  paramsV:4,                     // versão das regras (migração automática)
+  // ---- HE ANCORADA NA JORNADA (07:00–17:00 seg–qui · 07:00–16:00 sex) ----
+  // Regra do gestor: batida antecipada (antes das 07:00) e permanência após 17:00/16:00 NÃO viram
+  // hora extra de forma automática. Só o tempo DENTRO da janela conta como HN; o tempo FORA da janela
+  // é apurado como HE 50% "a autorizar" e só é pago via De Acordo HE (nada automático).
+  heAncora:true,                 // true = HE ancorada na janela da jornada (padrão) · false = modelo legado (H − jornada)
+  heJin:7,                       // início da jornada (07:00)
+  heJoutSegQui:17,               // fim da jornada seg–qui (17:00)
+  heJoutSex:16,                  // fim da jornada sexta (16:00)
+  heTolMin:0,                    // tolerância (min) sobre o tempo fora da janela antes de apurar HE (0 = tudo fora da janela é apurado)
+  paramsV:5,                     // versão das regras (migração automática)
   pontoIni:16, pontoFim:15,      // período do espelho de ponto (informativo)
   jornadaPadraoDia:9,             // horas de trabalho num dia cheio (07-17 com 1h almoço)
   adnIni:22, adnFim:5,            // janela do adicional noturno (usado só no cálculo próprio)
@@ -5883,6 +5892,9 @@ if((+ROBO_PARAMS.paramsV||1)<2){ROBO_PARAMS.compOffset=0;ROBO_PARAMS.paramsV=2;l
 if((+ROBO_PARAMS.paramsV||1)<3){ROBO_PARAMS.calcRegra='cliente';ROBO_PARAMS.paramsV=3;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 // v4: "De Acordo HE" — HE 50% deixa de ser paga por padrão; passa a exigir autorização por dia (email)
 if((+ROBO_PARAMS.paramsV||1)<4){ROBO_PARAMS.heAuthPadrao='nao';ROBO_PARAMS.he50Fator=100;ROBO_PARAMS.paramsV=4;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
+// v5: HE ancorada na jornada — antecipação antes das 07:00 e permanência após 17:00/16:00 não viram
+// extra automaticamente; só o tempo fora da janela é apurado como HE 50% "a autorizar" (De Acordo HE).
+if((+ROBO_PARAMS.paramsV||1)<5){ROBO_PARAMS.heAncora=true;ROBO_PARAMS.heJin=7;ROBO_PARAMS.heJoutSegQui=17;ROBO_PARAMS.heJoutSex=16;ROBO_PARAMS.heTolMin=0;ROBO_PARAMS.paramsV=5;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 
 // ---------------------------------------------------------------------------
 // DE ACORDO HE — autorização manual da HE 50% (o cliente só paga HE autorizada por email)
@@ -6353,17 +6365,30 @@ function calcDiaCliente(marcas,dow,dataStr){
     else if(dN==='SAB'){r.he100=H}
     else{
       var j=(dN==='SEX')?8:9;
-      // MODELO EXATO DA PLANILHA "PONTO AJUSTADO" (confirmado linha a linha — HN e HE conferem):
-      // · HN = min(H, jornada normal)  → 9h seg–qui, 8h sex
-      // · HE 50% = excedente de H sobre a jornada normal, com tolerância de 15 min (H − j, só se H > j+0,25)
-      // · a planilha NÃO ancora no horário programado: a entrada antecipada entra no cômputo de H
-      //   (premissa 3 "não contar 10 min antecedentes" é intenção do texto, mas a apuração real usa H − j)
-      r.hn=Math.min(H,j);
-      r.he50=(H>j+0.25)?(H-j):0;
+      if(P.heAncora!==false){
+        // ---- MODELO ANCORADO NA JORNADA (regra do gestor, v5) ----
+        // Janela contratada: 07:00–17:00 seg–qui · 07:00–16:00 sex.
+        // · HN = tempo trabalhado DENTRO da janela (− 1h almoço), limitado à jornada normal.
+        // · HE 50% APURADA = tempo trabalhado FORA da janela (antes das 07:00 + após 17:00/16:00).
+        //   → batida antecipada (6:45/6:50/6:55) e permanência após 17:00 NÃO entram na HN nem viram
+        //     extra automático: caem na HE "a autorizar", que só é paga via De Acordo HE (nada automático).
+        var JIN=(+P.heJin||7);
+        var JOUT=(dN==='SEX')?(+P.heJoutSex||16):(+P.heJoutSegQui||17);
+        var dentro=ov(a,b,JIN,JOUT);                                   // sobreposição com a janela
+        var almo=(dentro>6||(a<12.25&&b>=12.5))?1:0;                   // 1h almoço se cruza a janela do almoço
+        r.hn=Math.min(Math.max(0,dentro-almo),j);
+        var tol=(+P.heTolMin||0)/60;                                   // tolerância (h) sobre o tempo fora da janela
+        var fora=ov(a,b,0,JIN)+ov(a,b,JOUT,48);                        // antes de 07:00 + após 17:00/16:00
+        r.he50=(fora>tol)?fora:0;
+      }else{
+        // ---- MODELO LEGADO (planilha "PONTO AJUSTADO", H − jornada com tolerância de 15 min) ----
+        // · HN = min(H, jornada normal)  → 9h seg–qui, 8h sex
+        // · HE 50% = excedente de H sobre a jornada normal (H − j, só se H > j+0,25)
+        r.hn=Math.min(H,j);
+        r.he50=(H>j+0.25)?(H-j):0;
+      }
       // PREMISSA LIMITANTE — "De Acordo HE": sobre a HE 50% apurada, o gestor zera dias específicos
-      // não reconhecidos pelo cliente (na compet. JUL foram 131,6h de 412h → ~68% reconhecido).
-      // Não é regra determinística (dias zerados 0,25–2,07h se sobrepõem aos mantidos 0,63–1,65h);
-      // o campo he50Fator aplica o % médio reconhecido para aproximar o total pagável.
+      // não reconhecidos pelo cliente. he50Fator (legado) aplica um % médio se < 100.
       var fat=(+P.he50Fator||100)/100;
       if(fat<1)r.he50=r.he50*fat;
     }
@@ -6375,26 +6400,29 @@ function calcDiaCliente(marcas,dow,dataStr){
 window.roboRecalcular=function(silencioso){
   var n=0,semMk=0;
   ROBO_LANC.forEach(function(l){
+    // recomputa o APURADO a partir das marcações → refresca também os snapshots *Ap,
+    // senão aplicarAjustes reverte hn/he100/he150/adn ao snapshot antigo (bug de ordenação).
+    function aplicarCalc(c){
+      l.hn=c.hn;l.he50=c.he50;l.he100=c.he100;l.he150=c.he150;l.adn=c.adn;l.trab=c.trab;
+      l.hnAp=c.hn;l.he50ap=c.he50;l.he100ap=c.he100;l.he150ap=c.he150;l.adnAp=c.adn;l.trabAp=c.trab;
+    }
     if(l.phtd==='MAN'){ // ponto manual: reclassifica excedente com a tolerância vigente
       if(!l.mk)return;
-      var c=calcDiaCliente(l.mk.split('|').filter(Boolean),l.dow,l.data);
-      l.hn=c.hn;l.he50=c.he50;l.he50ap=c.he50;l.he100=c.he100;l.he150=c.he150;l.adn=c.adn;l.trab=c.trab;n++;return;
+      aplicarCalc(calcDiaCliente(l.mk.split('|').filter(Boolean),l.dow,l.data));n++;return;
     }
     if(!l.mk){if((+l.trab||0)>0||(+l.he150||0)>0||(+l.he100||0)>0)semMk++;return} // só conta como pendente se tem horas (dias zerados sem marcação são normais)
     var marcas=l.mk.split('|').filter(Boolean);
     if(ROBO_PARAMS.calcRegra==='cliente'){
-      var c2=calcDiaCliente(marcas,l.dow,l.data);
-      l.hn=c2.hn;l.he50=c2.he50;l.he50ap=c2.he50;l.he100=c2.he100;l.he150=c2.he150;l.adn=c2.adn;l.trab=c2.trab;
+      aplicarCalc(calcDiaCliente(marcas,l.dow,l.data));
     }else{
       var dia={marcas:marcas,contas:(l.ct?l.ct.split(';').filter(Boolean).map(function(s){var p=s.split('~');return{t:p[0],v:p[1]}}):[])};
-      var c3=calcDia(dia);
-      l.hn=c3.hn;l.he50=c3.he50;l.he50ap=c3.he50;l.he100=c3.he100;l.he150=c3.he150;l.adn=c3.adn;l.trab=c3.trab;
+      aplicarCalc(calcDia(dia));
     }
     n++;
   });
   aplicarDeAcordoHE();   // aplica autorização (HE 50% não paga sem De Acordo)
   roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v6|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v7|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg'))}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -6425,7 +6453,7 @@ window.heAuthParcial=function(key,h){
 window.heAuthSetPadrao=function(v){
   ROBO_PARAMS.heAuthPadrao=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
   aplicarDeAcordoHE();roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v6|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao)}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v7|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg'))}catch(e){}
   renderRobo();
 };
 // AÇÃO EM LOTE: reconhece / não reconhece todos os lançamentos com HE 50% do período em tela
@@ -6663,6 +6691,13 @@ function deAcordoHTML(FA){
     +'<div style="font-size:11px;font-weight:800;color:var(--ca)">🔐 DE ACORDO HE — Autorização da HE 50% <span style="font-weight:400;color:var(--dm)">(o cliente só paga hora extra autorizada por email)</span></div>'
     +'<div style="font-size:9px;color:var(--dm)">Padrão: <select onchange="heAuthSetPadrao(this.value)" style="font-size:9px"><option value="nao" '+(padrao==='nao'?'selected':'')+'>NÃO pagar sem autorização</option><option value="sim" '+(padrao==='sim'?'selected':'')+'>Pagar por padrão</option></select></div>'
     +'</div>';
+  if(ROBO_PARAMS.heAncora!==false){
+    h+='<div style="font-size:9px;color:var(--dm);background:'+GH+';border-radius:5px;padding:5px 7px;margin:4px 0;line-height:1.5">'
+      +'⏱ <b>Regra da jornada 07:00–17:00 (sex 07:00–16:00):</b> tempo <b>dentro</b> da janela = horas normais. '
+      +'Batida <b>antecipada</b> (antes das 07:00) e permanência <b>após 17:00/16:00</b> <u>não viram extra automaticamente</u> — '
+      +'aparecem aqui como <b>HE 50% apurada “a autorizar”</b> e só são pagas quando você reconhece o dia abaixo (De Acordo por email).'
+      +'</div>';
+  }
   h+='<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;margin:6px 0">'
     +'<span>HE 50% apurada: <b>'+h2hm(apu)+'</b></span>'
     +'<span style="color:var(--gn)">Reconhecida (a pagar): <b>'+h2hm(rec)+'</b></span>'
@@ -8881,7 +8916,7 @@ try{setTimeout(function(){try{if(typeof R==='function')R()}catch(e){}},1500)}cat
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
 try{
-  var calcAssin='planilha-v6|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao;
+  var calcAssin='planilha-v7|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg');
   if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
     var rc=window.roboRecalcular(true);
     lss('cbsi-v15-robo-calcver',calcAssin);
@@ -8905,8 +8940,8 @@ window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:ca
   lancCount:function(){return ROBO_LANC.length},filtro:function(){var f=roboFiltroAtivo();return{n:f.regs.length,rotulo:f.rotulo,modo:f.modo}},ptedit:function(){return PT_EDIT},heauth:function(){return HE_AUTH}};
 console.log('🤖 Robô de Ponto + Andaimes carregados (add-on v16)');
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=73;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='73 · 04/08/2026';        // rótulo exibido no badge
+var CBSI_VER=74;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='74 · 04/08/2026 · HE ancorada 07-17';  // rótulo exibido no badge
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
