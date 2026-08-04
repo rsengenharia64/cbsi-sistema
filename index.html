@@ -8904,18 +8904,36 @@ try{if(typeof buildDev==='function')buildDev()}catch(e){console.warn('buildDev r
 window.__roboDebug={pdfToLines:pdfToLines,parseEspelhos:parseEspelhos,calcDia:calcDia,calcDiaCliente:calcDiaCliente,ensurePdfJs:ensurePdfJs,
   lancCount:function(){return ROBO_LANC.length},filtro:function(){var f=roboFiltroAtivo();return{n:f.regs.length,rotulo:f.rotulo,modo:f.modo}},ptedit:function(){return PT_EDIT},heauth:function(){return HE_AUTH}};
 console.log('🤖 Robô de Ponto + Andaimes carregados (add-on v16)');
-// ---- INDICADOR DE VERSÃO (build) — confirma qual versão está carregada; se aparecer número antigo é cache ----
-var CBSI_BUILD='72 · 04/08/2026';
-window.CBSI_BUILD=CBSI_BUILD;
-function bmBuildBadge(){try{
+// ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
+var CBSI_VER=73;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='73 · 04/08/2026';        // rótulo exibido no badge
+window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
+function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
-  if(!e){e=document.createElement('div');e.id=id;e.title='Versão carregada. Se estiver desatualizada, abra a URL com ?v=<número novo> para furar o cache.';
-    e.style.cssText='position:fixed;right:7px;bottom:7px;z-index:99999;background:#0b3b4a;color:#7fe3c0;font:700 10px/1.2 ui-monospace,Menlo,Consolas,monospace;padding:3px 8px;border-radius:7px;opacity:.9;box-shadow:0 1px 5px rgba(0,0,0,.35);cursor:default;user-select:none';
+  if(!e){e=document.createElement('div');e.id=id;
+    e.style.cssText='position:fixed;right:7px;bottom:7px;z-index:99999;font:700 10px/1.2 ui-monospace,Menlo,Consolas,monospace;padding:3px 8px;border-radius:7px;opacity:.92;box-shadow:0 1px 5px rgba(0,0,0,.35);user-select:none';
     document.body.appendChild(e);}
-  e.textContent='CBSI build '+CBSI_BUILD;
+  e.style.background=cor||'#0b3b4a';e.style.color=cor?'#fff':'#7fe3c0';
+  e.style.cursor=txt?'pointer':'default';
+  e.title=txt?'Clique para atualizar para a versão mais recente':'Versão carregada (CBSI build '+CBSI_BUILD+').';
+  e.textContent=txt||('CBSI build '+CBSI_BUILD);
+  e.onclick=txt?function(){location.replace(location.pathname+'?v='+(e.getAttribute('data-ver')||Date.now()));}:null;
+}catch(e){}}
+// Verifica no servidor se há build mais novo e atualiza automaticamente (uma vez por build, por sessão)
+function bmAutoUpdate(){try{
+  fetch(location.pathname+'?_='+Date.now(),{cache:'no-store'}).then(function(r){return r.text()}).then(function(html){
+    var m=html.match(/CBSI_VER\s*=\s*(\d+)/);if(!m)return;var latest=+m[1];
+    if(latest>CBSI_VER){
+      var g='cbsi-upd-'+latest;
+      if(sessionStorage.getItem(g)!=='1'){sessionStorage.setItem(g,'1');location.replace(location.pathname+'?v='+latest);}
+      else{var b=document.getElementById('cbsiBuildBadge');bmBuildBadge('#c0392b','🔄 Nova versão (build '+latest+') — clique p/ atualizar');if(b)b.setAttribute('data-ver',latest);var bb=document.getElementById('cbsiBuildBadge');if(bb)bb.setAttribute('data-ver',latest);}
+    }
+  }).catch(function(){});
 }catch(e){}}
 try{bmBuildBadge()}catch(e){}
 setTimeout(function(){try{bmBuildBadge()}catch(e){}},1500);
+setTimeout(function(){try{bmAutoUpdate()}catch(e){}},2500);       // checa logo após abrir
+setInterval(function(){try{bmAutoUpdate()}catch(e){}},600000);    // e a cada 10 min (pega deploy novo sem fechar a tela)
 })();
 
 </script>
