@@ -7233,10 +7233,14 @@ function bmCalcMes(meses){
   // 1 mês = linhas idênticas ao boletim (chave por linha); vários meses = CONSOLIDA por serviço (chave por descrição)
   var multi=(meses||[]).length!==1;
   var normD=function(s){return String(s||'').toUpperCase().replace(/\s+/g,' ').trim();};
+  // TIPO canônico por descrição: alguns meses (ex.: JAN/FEV) rotulam a UNID toda como "SV". Cruzando TODOS
+  // os meses, adota-se o tipo majoritário de cada serviço (Caminhão Munck = VB/Mês vem de MAR–JUL, corrige JAN/FEV).
+  var _canon={};Object.keys(md).forEach(function(mm){var rr=(md[mm]&&md[mm].rows)||[];rr.forEach(function(r){var k=normD(r.desc);if(!_canon[k])_canon[k]={};_canon[k][r.t]=(_canon[k][r.t]||0)+1;});});
+  var tipoCanon=function(desc,fb){var v=_canon[normD(desc)];if(!v)return fb||'SV';var best=null,bc=-1;['HH','VM','VB','SV'].forEach(function(t){var c=v[t]||0;if(c>bc){bc=c;best=t;}});return best||fb||'SV';};
   var keyOf=function(m,base){return multi?('D|'+normD(base.desc||base.d)):(String(m)+':'+(base.it||base.desc));};
-  var addRow=function(m,base,q,v){var key=keyOf(m,base);
-    if(!agg[key])agg[key]={i:{it:base.it,d:base.desc||base.d||'',t:base.t,u:base.un||base.u||'',pu:base.pu},q:0,v:0,_tv:{}};
-    agg[key].q+=q;agg[key].v+=v;var t=base.t||'HH';agg[key]._tv[t]=(agg[key]._tv[t]||0)+v;};
+  var addRow=function(m,base,q,v){var key=keyOf(m,base);var tp=tipoCanon(base.desc||base.d,base.t);
+    if(!agg[key])agg[key]={i:{it:base.it,d:base.desc||base.d||'',t:tp,u:base.un||base.u||'',pu:base.pu},q:0,v:0,_tv:{}};
+    agg[key].q+=q;agg[key].v+=v;agg[key]._tv[tp]=(agg[key]._tv[tp]||0)+v;};
   (meses||[]).forEach(function(m){
     var d=md[m];
     if(d&&d.rows&&d.rows.length){mesesFile.push(m);total+=(+d.total||0);
