@@ -8006,7 +8006,7 @@ function pintImportarPlanilha(wb,fonteNome){
       L.push(novo);idx[l]=L.length-1;novos++;
     }else{
       var ex=L[i];
-      ['a','r','om','pg','pm','diBL','dfBL','diProg','dfProg','diTend','dfTend','di','df','m2l','m2a','m2p','m2e','m2pend','st','obs'].forEach(function(k){
+      ['a','r','om','pg','pm','diBL','dfBL','diProg','dfProg','diTend','dfTend','di','df','sapDt','m2l','m2a','m2p','m2e','m2pend','st','obs'].forEach(function(k){
         if(campos[k]!=null&&campos[k]!==''&&campos[k]!==0)ex[k]=campos[k];
         else if(k==='m2e'&&campos.m2e===0&&ex.st!=='CONCLUÍDO')ex.m2e=0;
       });
@@ -8035,6 +8035,7 @@ function pintImportarPlanilha(wb,fonteNome){
       pg:String(r[5]||'').trim()==='BASELINE'?pgEx:String(r[5]||'').trim(),pm:String(r[6]||'').trim(),
       diBL:pintData(r[7]),dfBL:pintData(r[8]),diProg:pintData(r[10]),dfProg:pintData(r[11]),
       diTend:pintData(r[13]),dfTend:pintData(r[14]),di:pintData(r[16]),df:pintData(r[17]),
+      sapDt:pintData(r[18]),  // col 18 = ENCERRAMENTO SAP REAL (data de baixa no SAP) — alimenta o Alerta SAP
       m2l:pintNum(r[19]),m2a:pintNum(r[20]),m2p:pintNum(r[20]),m2e:pintNum(r[21]),m2pend:pintNum(r[22]),
       st:pintStatusNorm(r[23]),obs:String(r[24]||'').trim()});
     // conserta classificação de importações anteriores: laudo da aba Meta nunca é EXTRA
@@ -8640,7 +8641,7 @@ function drivePintAuto(files){
       delete DRIVE_CFG.status.pintManual;      // Drive tem algo mais novo → assume e limpa o override
     }
   }catch(e){}
-  var marca=f.id+'|'+f.modifiedTime+'|v3';
+  var marca=f.id+'|'+f.modifiedTime+'|v4';  // v4: passa a ler ENCERRAMENTO SAP REAL (col 18) → força reimport 1x
   if(DRIVE_CFG.status.pintImport&&DRIVE_CFG.status.pintImport.marca===marca)return;
   ensureXLSX().then(function(){return driveDownload(f.id)}).then(function(buf){
     var wb=XLSX.read(new Uint8Array(buf),{type:'array'});
@@ -9117,8 +9118,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=79;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='79 · 04/08/2026 · desfazer edição + guia passo a passo';
+var CBSI_VER=80;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='80 · 04/08/2026 · painel pintura: leitura completa + baixa SAP real';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
