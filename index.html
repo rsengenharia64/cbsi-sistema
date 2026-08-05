@@ -6850,21 +6850,29 @@ function auditoriaInner(FA){
 function detalheDiario(c){
   var arr=c.regs.slice().sort(function(a,b){return dataBR(a.data)-dataBR(b.data)});
   var h='<div style="background:rgba(120,120,120,.06);padding:6px;border-radius:6px;margin:2px 0">'
-    +'<div style="font-size:8px;color:var(--dm);margin-bottom:3px">Edite as <b>marcações</b> (entrada/saída, formato hh:mm|hh:mm) ou as <b>horas medidas</b> por tipo. Deixe em branco para manter o apurado. Toda edição pede justificativa. Apurado (real) fica no título de cada campo.</div>'
+    +'<div style="font-size:8px;color:var(--dm);margin-bottom:3px">📌 <b>Referência à vista:</b> a entrada→saída calculada e as horas apuradas do ponto aparecem em cinza (o número cinza ao lado de cada campo é o <b>apurado real</b>). Para ajustar aos <b>recebíveis reconhecidos pelo cliente</b>, digite por cima: <b>marcações</b> (entrada/saída, hh:mm|hh:mm) ou as <b>horas medidas</b> por tipo. Campo vazio mantém o apurado. Toda edição pede justificativa. Dias sem batida mostram a <b>situação</b> (DSR/COMP/Atestado…) em laranja.</div>'
     +'<div style="overflow:auto"><table style="width:100%;font-size:8px;border-collapse:collapse">'
     +'<tr style="background:var(--c1)"><th style="padding:2px;text-align:left">Data</th><th>Dia</th><th>Marcações (entrada/saída)</th><th>Trab</th><th title="apurado→medido">HN</th><th>HE50</th><th>HE100</th><th>HE150</th><th>ADN</th><th style="text-align:left">Justificativa</th><th></th></tr>';
   arr.forEach(function(l){
     var key=heKey(l),e=PT_EDIT[key]||{};
     var mkVal=(e.mk!=null?e.mk:(l.mk||''));
+    // REFERÊNCIA (base calculada do ponto): entrada→saída real + situação do dia quando não há batida
+    var marcasBase=String(l.mk||'').split('|').filter(Boolean);
+    var refES=marcasBase.length>=2?(marcasBase[0]+' → '+marcasBase[marcasBase.length-1]):'';
+    var sit=String(l.obs||'').trim()||String(l.phtd||'').trim();   // DSR / COMP / Atestado / CB.. quando sem batida
+    var refLinha=refES?('calc: '+refES+' · trab '+n2(+l.trabAp||0)+'h'):(sit?('situação: '+sit+' (sem batida)'):'sem registro de ponto');
+    var phSemMarc=sit?(sit+' — sem batida'):'sem marcação';
     function inp(tipo,ap,med){
       var ov=(e[tipo]!=null&&e[tipo]!=='');
-      return '<input type="number" step="0.01" min="0" value="'+(ov?e[tipo]:'')+'" placeholder="'+n2(ap)+'" title="apurado '+n2(ap)+' · medido '+n2(med)+'" onchange="ptEditHora(\''+key+'\',\''+tipo+'\',this.value,(document.getElementById(\'nt_'+key.replace(/[^A-Za-z0-9]/g,'_')+'\')||{}).value)" style="width:40px;font-size:8px;padding:1px;'+(ov?'background:#fff6e0;border:1px solid var(--co)':'')+'">';
+      return '<span style="font-size:7px;color:var(--dm)" title="apurado (real do ponto) — referência">'+n2(ap)+'</span> '
+        +'<input type="number" step="0.01" min="0" value="'+(ov?e[tipo]:'')+'" placeholder="·" title="apurado '+n2(ap)+' · medido '+n2(med)+' — vazio mantém o apurado" onchange="ptEditHora(\''+key+'\',\''+tipo+'\',this.value,(document.getElementById(\'nt_'+key.replace(/[^A-Za-z0-9]/g,'_')+'\')||{}).value)" style="width:34px;font-size:8px;padding:1px;'+(ov?'background:#fff6e0;border:1px solid var(--co)':'')+'">';
     }
     var ntId='nt_'+key.replace(/[^A-Za-z0-9]/g,'_');
     h+='<tr style="border-bottom:1px solid var(--bd)">'
       +'<td style="padding:2px;text-align:left">'+l.data+(l.editado?' <span style="color:var(--co)" title="dia editado">✎</span>':'')+'</td>'
       +'<td style="text-align:center">'+(l.dow||'')+'</td>'
-      +'<td><input type="text" value="'+String(mkVal).replace(/"/g,'&quot;')+'" onchange="ptEditMarc(\''+key+'\',this.value,(document.getElementById(\''+ntId+'\')||{}).value)" placeholder="sem marcação" style="width:130px;font-size:8px;padding:1px;'+(e.mk!=null?'background:#fff6e0;border:1px solid var(--co)':'')+'"></td>'
+      +'<td><input type="text" value="'+String(mkVal).replace(/"/g,'&quot;')+'" onchange="ptEditMarc(\''+key+'\',this.value,(document.getElementById(\''+ntId+'\')||{}).value)" placeholder="'+phSemMarc.replace(/"/g,'&quot;')+'" style="width:130px;font-size:8px;padding:1px;'+(e.mk!=null?'background:#fff6e0;border:1px solid var(--co)':'')+'">'
+      +'<div style="font-size:7px;color:'+(refES?'var(--dm)':'var(--co)')+';margin-top:1px">'+refLinha+'</div></td>'
       +'<td style="text-align:right;color:var(--dm)">'+n2(+l.trabAp||0)+'</td>'
       +'<td style="text-align:center">'+inp('hn',+l.hnAp||0,+l.hn||0)+'</td>'
       +'<td style="text-align:center">'+inp('he50',+l.he50ap||0,+l.he50||0)+'</td>'
@@ -9091,8 +9099,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=77;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='77 · 04/08/2026 · indicadores comportamentais reais';
+var CBSI_VER=78;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='78 · 04/08/2026 · edição de ponto com referência à vista';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
