@@ -6516,6 +6516,13 @@ window.ptEditMarc=function(key,mk,nota){
 };
 window.ptEditNota=function(key,nota){PT_EDIT[key]=PT_EDIT[key]||{};PT_EDIT[key].nota=nota;limparEditVazio(key);ptEditSave()};
 window.ptEditLimpar=function(key){delete PT_EDIT[key];ptEditSave();aplicarAjustes();roboSave();renderRobo();rtoast('↩ Edição removida — dia voltou ao apurado do ponto.')};
+// VOLTAR — desfaz TODAS as edições de um colaborador (útil se digitou errado ou editou a pessoa errada)
+window.ptEditLimparColab=function(id){
+  var regs=(window.FA&&window.FA.regs)?window.FA.regs:ROBO_LANC;var n=0;
+  regs.forEach(function(l){if(l.id===id||l.mat===id||l.nome===id){var k=heKey(l);if(PT_EDIT[k]){delete PT_EDIT[k];n++}}});
+  ptEditSave();aplicarAjustes();roboSave();renderRobo();
+  rtoast(n?('↩ '+n+' dia(s) revertido(s) ao apurado do ponto para este colaborador.'):'Nenhuma edição para desfazer neste colaborador.');
+};
 function limparEditVazio(key){ // remove a entrada se ficou sem nenhum override
   var e=PT_EDIT[key];if(!e)return;
   var temOverride=['mk','hn','he50','he100','he150','adn'].some(function(k){return e[k]!=null&&e[k]!==''});
@@ -6849,8 +6856,19 @@ function auditoriaInner(FA){
 }
 function detalheDiario(c){
   var arr=c.regs.slice().sort(function(a,b){return dataBR(a.data)-dataBR(b.data)});
+  var temEdit=(c.edit||0)>0;
   var h='<div style="background:rgba(120,120,120,.06);padding:6px;border-radius:6px;margin:2px 0">'
-    +'<div style="font-size:8px;color:var(--dm);margin-bottom:3px">📌 <b>Referência à vista:</b> a entrada→saída calculada e as horas apuradas do ponto aparecem em cinza (o número cinza ao lado de cada campo é o <b>apurado real</b>). Para ajustar aos <b>recebíveis reconhecidos pelo cliente</b>, digite por cima: <b>marcações</b> (entrada/saída, hh:mm|hh:mm) ou as <b>horas medidas</b> por tipo. Campo vazio mantém o apurado. Toda edição pede justificativa. Dias sem batida mostram a <b>situação</b> (DSR/COMP/Atestado…) em laranja.</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
+    +'<details style="flex:1;min-width:240px"><summary style="cursor:pointer;font-size:9px;font-weight:800;color:var(--ca)">❔ Como ajustar o ponto — passo a passo (e o que o sistema faz)</summary>'
+    +'<div style="font-size:8px;color:var(--dm);line-height:1.7;margin-top:4px;padding:5px 7px;background:rgba(0,173,249,.05);border-radius:5px">'
+    +'<b>1.</b> A <b>referência do ponto real fica sempre à vista</b>: em cinza aparece a entrada→saída calculada (<i>calc: 06:50 → 16:56</i>) e o número apurado ao lado de cada campo. <u>Mesmo depois de editar, o apurado continua em cinza</u> — você nunca perde o valor anterior.<br>'
+    +'<b>2.</b> Para ajustar ao que o <b>cliente reconhece como pagamento</b>, digite por cima: nas <b>Marcações</b> (entrada/saída, ex.: <i>07:00|12:00|13:00|17:00</i>) o sistema <b>recalcula HN/HE/ADN sozinho</b>; ou digite direto a <b>hora medida</b> por tipo (HN, HE50…).<br>'
+    +'<b>3.</b> Escreva a <b>justificativa</b> (ex.: nº/data do email de validação do cliente).<br>'
+    +'<b>4. Para voltar:</b> campo <b>vazio</b> mantém o apurado; o botão <b>↩</b> no fim da linha desfaz aquele dia; e <b>"Desfazer todas"</b> reverte o colaborador inteiro (use se digitou errado ou selecionou a pessoa errada).<br>'
+    +'<b>O que o sistema faz:</b> guarda o <b>apurado</b> (real do ponto) intacto e sua edição vira o <b>medido</b> (o que vai ao cliente). O total a medir e o Boletim de Medição usam o medido; a HE 50% ainda passa pela autorização do <b>De Acordo HE</b>. Nada sobrescreve o ponto original — dá para reverter quando quiser.'
+    +'</div></details>'
+    +(temEdit?('<button onclick="ptEditLimparColab(\''+String(c.id).replace(/'/g,"\\'")+'\')" style="font-size:8px;font-weight:800;padding:4px 9px;border:1px solid var(--rd);color:var(--rd);border-radius:6px;background:transparent;cursor:pointer;white-space:nowrap">↩ Desfazer todas as edições ('+c.edit+')</button>'):'')
+    +'</div>'
     +'<div style="overflow:auto"><table style="width:100%;font-size:8px;border-collapse:collapse">'
     +'<tr style="background:var(--c1)"><th style="padding:2px;text-align:left">Data</th><th>Dia</th><th>Marcações (entrada/saída)</th><th>Trab</th><th title="apurado→medido">HN</th><th>HE50</th><th>HE100</th><th>HE150</th><th>ADN</th><th style="text-align:left">Justificativa</th><th></th></tr>';
   arr.forEach(function(l){
@@ -9099,8 +9117,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=78;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='78 · 04/08/2026 · edição de ponto com referência à vista';
+var CBSI_VER=79;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='79 · 04/08/2026 · desfazer edição + guia passo a passo';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
