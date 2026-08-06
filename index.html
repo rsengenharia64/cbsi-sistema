@@ -5864,8 +5864,9 @@ var ROBO_PARAMS_DEFAULT={
   heJin:7,                       // início da jornada (07:00)
   heJoutSegQui:17,               // fim da jornada seg–qui (17:00)
   heJoutSex:16,                  // fim da jornada sexta (16:00)
-  heTolMin:0,                    // tolerância (min) sobre o tempo fora da janela antes de apurar HE (0 = tudo fora da janela é apurado)
-  paramsV:5,                     // versão das regras (migração automática)
+  heTolMin:15,                   // tolerância da companhia (min) POR LADO: até 15 min antes/depois não gera HE; passou, conta todo o lado
+  custoHora:0,                   // R$/hora (referência salarial média) — editável na aba; alimenta a análise custo × receita
+  paramsV:6,                     // versão das regras (migração automática)
   pontoIni:16, pontoFim:15,      // período do espelho de ponto (informativo)
   jornadaPadraoDia:9,             // horas de trabalho num dia cheio (07-17 com 1h almoço)
   adnIni:22, adnFim:5,            // janela do adicional noturno (usado só no cálculo próprio)
@@ -5895,6 +5896,8 @@ if((+ROBO_PARAMS.paramsV||1)<4){ROBO_PARAMS.heAuthPadrao='nao';ROBO_PARAMS.he50F
 // v5: HE ancorada na jornada — antecipação antes das 07:00 e permanência após 17:00/16:00 não viram
 // extra automaticamente; só o tempo fora da janela é apurado como HE 50% "a autorizar" (De Acordo HE).
 if((+ROBO_PARAMS.paramsV||1)<5){ROBO_PARAMS.heAncora=true;ROBO_PARAMS.heJin=7;ROBO_PARAMS.heJoutSegQui=17;ROBO_PARAMS.heJoutSex=16;ROBO_PARAMS.heTolMin=0;ROBO_PARAMS.paramsV=5;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
+// v6: tolerância da companhia de 15 min POR LADO (até 15 min antes/depois não gera custo de HE)
+if((+ROBO_PARAMS.paramsV||1)<6){ROBO_PARAMS.heTolMin=15;if(ROBO_PARAMS.custoHora==null)ROBO_PARAMS.custoHora=0;ROBO_PARAMS.paramsV=6;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 
 // ---------------------------------------------------------------------------
 // DE ACORDO HE — autorização manual da HE 50% (o cliente só paga HE autorizada por email)
@@ -6377,9 +6380,15 @@ function calcDiaCliente(marcas,dow,dataStr){
         var dentro=ov(a,b,JIN,JOUT);                                   // sobreposição com a janela
         var almo=(dentro>6||(a<12.25&&b>=12.5))?1:0;                   // 1h almoço se cruza a janela do almoço
         r.hn=Math.min(Math.max(0,dentro-almo),j);
-        var tol=(+P.heTolMin||0)/60;                                   // tolerância (h) sobre o tempo fora da janela
-        var fora=ov(a,b,0,JIN)+ov(a,b,JOUT,48);                        // antes de 07:00 + após 17:00/16:00
-        r.he50=(fora>tol)?fora:0;
+        // TOLERÂNCIA DA COMPANHIA (v6): até heTolMin (15 min) de cada lado NÃO gera custo de HE.
+        // Passou dos 15 min naquele lado → conta TODO o tempo fora da janela daquele lado como HE (a autorizar).
+        // Ex.: entra 06:45 (15 min) → 0 · entra 06:44/06:30 → conta os 16/30 min · sai 17:15 → 0 · sai 17:30 → 30 min.
+        var tol=(+P.heTolMin||0)/60;
+        var antes=ov(a,b,0,JIN);                                       // tempo antes de 07:00
+        var apos=ov(a,b,JOUT,48);                                      // tempo após 17:00/16:00
+        var heAntes=(antes>tol+1e-9)?antes:0;
+        var heApos=(apos>tol+1e-9)?apos:0;
+        r.he50=heAntes+heApos;
       }else{
         // ---- MODELO LEGADO (planilha "PONTO AJUSTADO", H − jornada com tolerância de 15 min) ----
         // · HN = min(H, jornada normal)  → 9h seg–qui, 8h sex
@@ -6422,7 +6431,7 @@ window.roboRecalcular=function(silencioso){
   });
   aplicarDeAcordoHE();   // aplica autorização (HE 50% não paga sem De Acordo)
   roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v7|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg'))}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v8|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0))}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -6453,7 +6462,7 @@ window.heAuthParcial=function(key,h){
 window.heAuthSetPadrao=function(v){
   ROBO_PARAMS.heAuthPadrao=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
   aplicarDeAcordoHE();roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v7|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg'))}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v8|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0))}catch(e){}
   renderRobo();
 };
 // AÇÃO EM LOTE: reconhece / não reconhece todos os lançamentos com HE 50% do período em tela
@@ -8727,6 +8736,149 @@ function driveSync(chave){
 // ---------------------------------------------------------------------------
 // UI — seção do Robô dentro da aba Espelho de Ponto (injetada, não substitui nada)
 // ---------------------------------------------------------------------------
+// ===== RELATÓRIO DE ANÁLISE — HN × HE validada, minutos de exceção e custo × receita =====
+function _brl(x){return 'R$ '+(Math.round((+x||0)*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function analiseDados(FA){
+  var P=ROBO_PARAMS,regs=(FA&&FA.regs)?FA.regs:[];
+  var JIN=(+P.heJin||7),tol=(+P.heTolMin||0)/60;
+  function jout(dow){return normTxt(dow)==='SEX'?(+P.heJoutSex||16):(+P.heJoutSegQui||17)}
+  function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
+  var T={hn:0,he50ap:0,he50:0,he100:0,he150:0,adn:0,dias:0,exAntes:0,exApos:0};
+  var byC={};
+  regs.forEach(function(l){
+    T.hn+=(+l.hn||0);T.he50ap+=(+l.he50ap||0);T.he50+=(+l.he50||0);T.he100+=(+l.he100||0);T.he150+=(+l.he150||0);T.adn+=(+l.adn||0);
+    if((+l.trab||0)>0)T.dias++;
+    var id=l.id||l.mat||l.nome||'?';
+    var c=byC[id]=byC[id]||{nome:l.nome||id,func:l.funcQQP||l.cargo||'',diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,dias:0};
+    c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
+    var marcas=String(l.mk||'').split('|').filter(Boolean).map(hm2h);
+    var dN=normTxt(l.dow);
+    if(marcas.length>=2){
+      var a=marcas[0],b=marcas[marcas.length-1];if(b<=a)b+=24;
+      if(dN!=='SAB'&&dN!=='DOM'){
+        var JOUT=jout(l.dow);
+        var antes=ov(a,b,0,JIN),apos=ov(a,b,JOUT,48);
+        var eAntes=(antes>tol+1e-9)?antes:0,eApos=(apos>tol+1e-9)?apos:0;
+        if(eAntes>0||eApos>0){c.diasExc++;c.minAntes+=eAntes;c.minApos+=eApos;T.exAntes+=eAntes;T.exApos+=eApos;}
+      }
+    }else if((+l.trab||0)===0 && ['SEG','TER','QUA','QUI','SEX'].indexOf(dN)>=0 && !/DOM|SAB|F[ÉE]RIAS|FERIAS|DSR|FOLGA|ATESTADO|FALTA|LICEN|AFASTAD|COMP/i.test(String((l.obs||'')+' '+(l.phtd||'')))){
+      c.semBatida++;
+    }
+  });
+  var ch=(+P.custoHora||0);
+  var custo={hn:ch*T.hn,he50:ch*1.5*T.he50,he100:ch*2*T.he100,he150:ch*2.5*T.he150,adn:ch*0.2*T.adn};
+  custo.total=custo.hn+custo.he50+custo.he100+custo.he150+custo.adn;
+  var receita=(+P.receitaRef||0),alvo=(+P.custoAlvo||70);
+  var relacao=receita>0?(custo.total/receita*100):0;
+  return {T:T,byC:byC,custoHora:ch,custo:custo,receita:receita,alvo:alvo,relacao:relacao,
+    horasCusto:T.hn+T.he50*1.5+T.he100*2+T.he150*2.5};
+}
+function analiseHTML(FA,con){
+  var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS;
+  var cortada=T.he50ap-T.he50;
+  var exList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return c.diasExc>0}).sort(function(x,y){return (y.minAntes+y.minApos)-(x.minAntes+x.minApos)});
+  var sbList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return c.semBatida>0}).sort(function(x,y){return y.semBatida-x.semBatida});
+  var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
+  var verd=d.receita<=0?'informe a receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE — custo ≥ receita':(d.relacao>=d.alvo?'🟡 ATENÇÃO — acima do alvo':'🟢 ADERENTE'));
+  function kp(l,v,c,s){return '<div class="kp" style="border-top:2px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+'">'+v+'</div>'+(s?'<div class="ks">'+s+'</div>':'')+'</div>';}
+  var h='<div class="cd" style="border:2px solid var(--ca);position:relative;margin-bottom:8px">'
+    +'<button class="fs-btn" onclick="toggleFullscreen(this)"></button>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px">'
+    +'<div style="font-size:12px;font-weight:800;color:var(--ca)">📊 RELATÓRIO DE ANÁLISE — Horas, Exceções e Custo × Receita</div>'
+    +'<button onclick="analiseExportar()" style="font-size:9px;font-weight:700;padding:4px 10px;background:var(--gn);color:#fff;border:none;border-radius:5px;cursor:pointer">⬇️ Exportar planilha</button>'
+    +'</div>';
+  // PREMISSA
+  h+='<div style="font-size:8px;color:var(--dm);background:rgba(0,173,249,.05);border-radius:5px;padding:6px 8px;margin-bottom:6px;line-height:1.6">'
+    +'⏱ <b>Premissa da companhia (HE):</b> jornada 07:00–17:00 (sex 07:00–16:00). <b>Tolerância de '+(+P.heTolMin||0)+' min por lado</b>: batida até '+(+P.heTolMin||0)+' min antes das 07:00 ou até '+(+P.heTolMin||0)+' min após 17:00/16:00 <u>não gera custo de HE</u>. Passou disso, conta todo o tempo fora da jornada como HE 50% <b>a autorizar</b> (só paga/fatura via De Acordo HE). Sáb = 100% · Dom/feriado = 150%.'
+    +'</div>';
+  // RESUMO (bate o olho)
+  h+='<div class="g g" style="grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:6px">'
+    +kp('Colaboradores',String(Object.keys(d.byC).length),'var(--cs)',T.dias+' dias trab.')
+    +kp('HN — Normal',h2hm(T.hn),'var(--cs)','faturável')
+    +kp('HE 50% apurada',h2hm(T.he50ap),'var(--co)','com tolerância')
+    +kp('HE 50% validada',h2hm(T.he50),'var(--gn)','a faturar')
+    +kp('HE 50% não recon.',h2hm(cortada),'var(--rd)','sem autorização')
+    +kp('Minutos exceção',h2hm(T.exAntes+T.exApos),'var(--ca)',exList.length+' colab.')
+    +'</div>';
+  // CUSTO × RECEITA
+  h+='<div style="border:1px solid var(--bd);border-radius:6px;padding:8px;margin-bottom:6px">'
+    +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:5px">💰 CUSTO × RECEITA — está aderente?</div>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:9px;margin-bottom:6px">'
+    +'<span>Custo-hora (R$/h): <input type="number" step="0.01" min="0" value="'+(P.custoHora||'')+'" onchange="roboSetParam(\'custoHora\',this.value)" placeholder="0,00" style="width:80px;font-size:10px;padding:3px;font-weight:700"></span>'
+    +'<span>Receita do período — BM/faturável (R$): <input type="number" step="0.01" min="0" value="'+(P.receitaRef||'')+'" onchange="roboSetParam(\'receitaRef\',this.value)" placeholder="0,00" style="width:120px;font-size:10px;padding:3px;font-weight:700"></span>'
+    +'<span>Alvo custo/receita (%): <input type="number" step="1" min="0" max="200" value="'+(+P.custoAlvo||70)+'" onchange="roboSetParam(\'custoAlvo\',this.value)" style="width:56px;font-size:10px;padding:3px"></span>'
+    +'</div>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;align-items:center">'
+    +'<span>Horas de custo (HN+HE ponderadas): <b>'+h2hm(d.horasCusto)+'</b></span>'
+    +'<span>Custo total: <b style="color:var(--rd)">'+_brl(d.custo.total)+'</b></span>'
+    +'<span>Receita: <b style="color:var(--gn)">'+_brl(d.receita)+'</b></span>'
+    +'<span>Margem: <b style="color:'+((d.receita-d.custo.total)>=0?'var(--gn)':'var(--rd)')+'">'+_brl(d.receita-d.custo.total)+'</b></span>'
+    +'<span style="font-size:12px;font-weight:900;color:'+cor+'">Custo/Receita: '+(d.receita>0?d.relacao.toFixed(1)+'%':'—')+'</span>'
+    +'<span style="font-weight:800;color:'+cor+'">'+verd+'</span>'
+    +'</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-top:4px">Custo = custo-hora × (HN·1 + HE50·1,5 + HE100·2 + HE150·2,5) + ADN·20%. Receita = o que você fatura no período (BM / medição validada pelo cliente). Ajuste os campos acima; o resto recalcula.</div>'
+    +'</div>';
+  // TABELA MINUTOS DE EXCEÇÃO
+  h+='<details open><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🎯 Quem gera os minutos de exceção (fora da tolerância) — '+exList.length+' colaborador(es)</summary>'
+    +'<div style="max-height:220px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Função</th><th>Dias c/ exceção</th><th>Min. antes 07:00</th><th>Min. após 17:00</th><th>Total exceção</th><th>HE apur.</th><th>HE validada</th></tr>'
+    +(exList.length?exList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center">'+c.diasExc+'</td><td style="text-align:center">'+h2hm(c.minAntes)+'</td><td style="text-align:center">'+h2hm(c.minApos)+'</td><td style="text-align:center;font-weight:800;color:var(--ca)">'+h2hm(c.minAntes+c.minApos)+'</td><td style="text-align:center">'+h2hm(c.he50ap)+'</td><td style="text-align:center;color:var(--gn);font-weight:700">'+h2hm(c.he50)+'</td></tr>'}).join(''):'<tr><td colspan="8" style="text-align:center;padding:8px;color:var(--dm)">Nenhuma batida fora da tolerância no período.</td></tr>')
+    +'</table></div></details>';
+  // SEM BATIDA (perdidos na área)
+  if(sbList.length){
+    h+='<details style="margin-top:4px"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--rd)">⚠️ Colaboradores com dias sem batida em dia útil (sem apontamento → não fatura) — '+sbList.length+'</summary>'
+      +'<div style="max-height:160px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+      +'<tr style="background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Função</th><th>Dias sem batida</th></tr>'
+      +sbList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td></tr>'}).join('')
+      +'</table></div></details>';
+  }
+  h+='</div>';
+  return h;
+}
+window.analiseExportar=function(){
+  try{
+    var FA=window.FA||roboFiltroAtivo();var d=analiseDados(FA);var T=d.T,P=ROBO_PARAMS;
+    var wb=XLSX.utils.book_new();
+    var resumo=[
+      ['RELATÓRIO DE ANÁLISE — ESPELHO DE PONTO'],
+      ['Competência/período',(FA&&FA.titulo)||''],
+      ['Premissa HE','Jornada 07:00-17:00 (sex 16:00) · tolerância '+(+P.heTolMin||0)+' min por lado · passou = conta todo o tempo fora da jornada'],
+      [],
+      ['Indicador','Valor (h)'],
+      ['Colaboradores',Object.keys(d.byC).length],
+      ['Dias trabalhados',T.dias],
+      ['HN — Hora Normal (faturável)',+T.hn.toFixed(3)],
+      ['HE 50% apurada (com tolerância)',+T.he50ap.toFixed(3)],
+      ['HE 50% validada (a faturar)',+T.he50.toFixed(3)],
+      ['HE 50% NÃO reconhecida',+(T.he50ap-T.he50).toFixed(3)],
+      ['HE 100%',+T.he100.toFixed(3)],['HE 150%',+T.he150.toFixed(3)],['Ad. Noturno',+T.adn.toFixed(3)],
+      ['Minutos de exceção (antes 07h)',+T.exAntes.toFixed(3)],
+      ['Minutos de exceção (após 17h)',+T.exApos.toFixed(3)],
+      [],
+      ['CUSTO × RECEITA'],
+      ['Custo-hora (R$/h)',d.custoHora],
+      ['Horas de custo ponderadas',+d.horasCusto.toFixed(3)],
+      ['Custo total (R$)',+d.custo.total.toFixed(2)],
+      ['Receita do período (R$)',+d.receita.toFixed(2)],
+      ['Margem (R$)',+(d.receita-d.custo.total).toFixed(2)],
+      ['Custo/Receita (%)',d.receita>0?+d.relacao.toFixed(1):''],
+      ['Alvo (%)',+P.custoAlvo||70]
+    ];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(resumo),'Resumo');
+    var ex=[['Colaborador','Função','Dias c/ exceção','Min antes 07h','Min após 17h','Total exceção (h)','HE apurada (h)','HE validada (h)']];
+    Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return c.diasExc>0}).sort(function(x,y){return (y.minAntes+y.minApos)-(x.minAntes+x.minApos)}).forEach(function(c){
+      ex.push([c.nome,c.func,c.diasExc,+c.minAntes.toFixed(3),+c.minApos.toFixed(3),+(c.minAntes+c.minApos).toFixed(3),+c.he50ap.toFixed(3),+c.he50.toFixed(3)]);
+    });
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ex),'Minutos de Exceção');
+    var sb=[['Colaborador','Função','Dias sem batida (dia útil)']];
+    Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return c.semBatida>0}).sort(function(x,y){return y.semBatida-x.semBatida}).forEach(function(c){sb.push([c.nome,c.func,c.semBatida])});
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sb),'Sem Batida');
+    var nome='Analise_Ponto_'+String((FA&&FA.rotulo)||'periodo').replace(/[^A-Za-z0-9_]+/g,'_')+'.xlsx';
+    ensureXLSX().then(function(){XLSX.writeFile(wb,nome)}).catch(function(){XLSX.writeFile(wb,nome)});
+    rtoast('⬇️ Relatório de análise exportado: '+nome);
+  }catch(e){rtoast('❌ Export análise: '+e.message);console.warn(e)}
+};
+
 function renderRobo(){
   var host=document.getElementById('roboBox');
   if(!host){var pg=document.getElementById('p-ponto');if(!pg)return;host=document.createElement('div');host.id='roboBox';pg.appendChild(host)}
@@ -8788,6 +8940,7 @@ function renderRobo(){
   +'<div class="g g5" style="margin-bottom:8px">'
   +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')+kpi('HE 50% apur.→pagar',h2hm(tot.he50ap)+' → '+h2hm(tot.he50),'var(--ca)')+kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
   +'</div>'
+  +analiseHTML(FA,con)
   +capacidadeHTML(FA,con)
   +deAcordoHTML(FA)
   +auditoriaHTML(FA)
@@ -9012,7 +9165,7 @@ try{setTimeout(function(){try{if(typeof R==='function')R()}catch(e){}},1500)}cat
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
 try{
-  var calcAssin='planilha-v7|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg');
+  var calcAssin='planilha-v8|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0);
   if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
     var rc=window.roboRecalcular(true);
     lss('cbsi-v15-robo-calcver',calcAssin);
@@ -9118,8 +9271,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=80;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='80 · 04/08/2026 · painel pintura: leitura completa + baixa SAP real';
+var CBSI_VER=81;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='81 · 04/08/2026 · relatório de análise + tolerância HE 15min';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
