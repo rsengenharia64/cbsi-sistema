@@ -9226,9 +9226,18 @@ function execHTML(FA,con){
   else if(aderBase==='semana'){ var wIni=_maxD?new Date(_maxD.getFullYear(),_maxD.getMonth(),_maxD.getDate()-6):pIni; if(wIni<pIni)wIni=pIni; var jw=_janela(wIni,_maxD||pFim); var duw=_du(wIni,_maxD||wIni); registradoRef=jw.reg; capRef=(jw.pres||presentes)*perDay*Math.max(1,duw); aderLabel='última semana'; aderSub=(jw.pres||presentes)+' pres × '+duw+' dia(s) úteis'; }
   else if(aderBase==='dia'){ var jd=_maxD?_janela(_maxD,_maxD):{reg:0,pres:0}; registradoRef=jd.reg; capRef=(jd.pres||presentes)*perDay; aderLabel='último dia '+(_maxD?fmtD(_maxD):''); aderSub=(jd.pres||presentes)+' pres × '+(Math.round(perDay*10)/10)+'h/dia'; }
   else { registradoRef=registrado; capRef=presentes*perDay*Math.max(1,duDecor); aderLabel='período decorrido'; aderSub=duDecor+' de '+duTotal+' dias úteis · presentes × '+(Math.round(perDay*10)/10)+'h/dia'; }
-  var aprov=capRef>0?Math.round(registradoRef/capRef*100):0;
-  var projMes=duDecor>0?Math.round(registrado/duDecor*duTotal):registrado;   // horas projetadas p/ fim do mês
-  var corA=aprov>=90?'var(--gn)':(aprov>=70?'#c9a000':'var(--rd)');
+  // LÓGICA REALIZADO% / PREVISTO%: previsto = fração do mês que o recorte representa (ex.: 15 de 30 dias = 50%);
+  // realizado = quanto do total do mês já foi registrado. Aderência = realizado ÷ previsto (100% = exatamente no ritmo).
+  var capMes=presentes*capH;                                              // capacidade do MÊS CHEIO (100%)
+  var aprov=capRef>0?Math.round(registradoRef/capRef*100):0;              // aderência ao ritmo (realizado÷previsto)
+  var esperadoPct=capMes>0?Math.round(capRef/capMes*1000)/10:0;           // % do mês previsto até aqui (ex.: 50,0)
+  var realizadoPct=capMes>0?Math.round(registradoRef/capMes*1000)/10:0;   // % do mês já realizado (ex.: 48,5)
+  var projMes=duDecor>0?Math.round(registrado/duDecor*duTotal):registrado;// horas projetadas p/ fim do mês
+  var projPct=capMes>0?Math.round(projMes/capMes*100):0;
+  var corA=aprov>=95?'var(--gn)':(aprov>=80?'#c9a000':'var(--rd)');
+  var corP=projPct>=95?'var(--gn)':(projPct>=80?'#c9a000':'var(--rd)');
+  function _pc(x){return (Math.round(x*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}
+  var aderIco=aprov>=95?'🟢':(aprov>=80?'🟡':'🔴');
   var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
   var verd=d.receita<=0?'informe receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE':(d.relacao>=d.alvo?'🟡 ATENÇÃO':'🟢 ADERENTE'));
   function box(l,v,c,s,link){
@@ -9253,12 +9262,16 @@ function execHTML(FA,con){
     +['dia|Dia','semana|Semana','decorrido|Mês (decorrido)','mes|Mês (cheio)','tendencia|Tendência'].map(function(o){var kv=o.split('|');return '<option value="'+kv[0]+'" '+(aderBase===kv[0]?'selected':'')+'>'+kv[1]+'</option>'}).join('')
     +'</select></span></div>'
     +'<div class="g g" style="grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:4px">'
-    +box('Capacidade '+(aderBase==='mes'||aderBase==='tendencia'?'(mês cheio)':'('+aderLabel+')'),h2hm(capRef),'var(--cs)',aderSub)
-    +box('Horas '+(aderBase==='tendencia'?'projetadas':'registradas'),h2hm(registradoRef),'var(--gn)',aderBase==='tendencia'?'no ritmo atual':(aderBase==='dia'||aderBase==='semana'?'no recorte':'realizado do ponto'))
-    +box('Aproveitamento',aprov+'%',corA,aderLabel)
-    +box('Projeção fim do mês',(capPres>0?Math.round(projMes/capPres*100):0)+'%',(capPres>0&&projMes/capPres>=0.9?'var(--gn)':(capPres>0&&projMes/capPres>=0.7?'#c9a000':'var(--rd)')),h2hm(projMes)+' h no ritmo atual')
+    +box('Previsto até aqui',_pc(esperadoPct)+'%','var(--cs)',duDecor+' de '+duTotal+' dias úteis · '+aderLabel)
+    +box('Realizado',_pc(realizadoPct)+'%','var(--gn)',h2hm(registradoRef)+' de '+h2hm(capMes))
+    // ADERÊNCIA no formato "realizado% / previsto%" (o que o gestor quer bater o olho) + lupa para o motivo
+    +'<div class="kp" onclick="roboIrDetalhe(\'relatorios\',\'analiseSemBatida\')" style="border-top:3px solid '+corA+';cursor:pointer" title="Aderência = realizado ÷ previsto. Clique para entender o motivo (quem não registrou horas / faltas).">'
+      +'<div class="kl">Aderência ao período <span style="font-size:9px;color:var(--ca)">🔎</span></div>'
+      +'<div class="kv" style="color:'+corA+';font-size:17px">'+_pc(realizadoPct)+'% <span style="font-size:12px;color:var(--dm)">/ '+_pc(esperadoPct)+'%</span></div>'
+      +'<div class="ks">realizado / previsto · <b style="color:'+corA+'">'+aprov+'% '+aderIco+'</b> · ver ›</div></div>'
+    +box('Projeção fim do mês',projPct+'%',corP,h2hm(projMes)+' h no ritmo atual')
     +'</div>'
-    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">📅 Período '+((FA&&FA.titulo&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'')+': <b>'+duDecor+' de '+duTotal+' dias úteis decorridos</b> ('+(duTotal>0?Math.round(duDecor/duTotal*100):0)+'% do período). O aproveitamento respeita o recorte selecionado — no meio do mês compara contra a capacidade proporcional, não contra o mês inteiro.</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">📅 <b>'+((FA&&FA.titulo&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'Período')+': '+duDecor+' de '+duTotal+' dias úteis decorridos = '+_pc(esperadoPct)+'% previsto</b>. Leitura: registramos <b>'+_pc(realizadoPct)+'%</b> do total do mês, de <b>'+_pc(esperadoPct)+'%</b> que era o esperado até hoje → aderência ao ritmo <b>'+aprov+'%</b>. No fim do mês fecha realizado% / 100%.</div>'
     // HORAS A FATURAR + FINANCEIRO
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:6px 0 4px">💵 HORAS A FATURAR & ADERÊNCIA</div>'
     +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px">'
@@ -9692,8 +9705,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=93;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='93 · 07/08/2026 · Ponto manual: lê pela pasta PONTO MANUAL + cargos de confiança (supervisor/coord/gerente/eng.seg) saem de "sem apontamento" p/ "aguardando ponto manual"';
+var CBSI_VER=94;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='94 · 07/08/2026 · Aderência no formato realizado%/previsto% (ex.: 48,5% / 50%): previsto = fração do mês decorrida, realizado = % do total; lupa p/ o motivo';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
