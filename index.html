@@ -5865,9 +5865,15 @@ var ROBO_PARAMS_DEFAULT={
   heJoutSegQui:17,               // fim da jornada seg–qui (17:00)
   heJoutSex:16,                  // fim da jornada sexta (16:00)
   heTolMin:15,                   // tolerância da companhia (min) POR LADO: até 15 min antes/depois não gera HE; passou, conta todo o lado
-  custoHora:0,                   // R$/hora (referência salarial média) — editável na aba; alimenta a análise custo × receita
+  custoHora:0,                   // R$/hora MANUAL (legado) — usado só quando custoModo='manual'
+  // ---- CUSTO DE HORAS a partir da BASE SALARIAL (salário fixo por função) ----
+  custoModo:'salario',           // 'salario' = custo-hora derivado do salário médio · 'manual' = usa custoHora
+  custoEncargos:1.79,            // fator de encargos sobre o salário (INSS, FGTS, 13º, férias, provisões)
+  custoBaseHoras:184,            // base de horas/mês para converter salário → custo-hora (capacidade do sistema)
+  salarioMedia:0,                // 0 = usa o salário médio baqueado da base (SAL_MEDIA); >0 = sobrescreve
+  receitaModo:'hhBM',            // 'hhBM' = só a parte de HH do BM aprovado · 'totalBM' = total do BM · 'manual' = receitaRef
   capHorasMes:184,               // capacidade de horas por colaborador no mês (jornada 44h) — Visão Executiva
-  paramsV:6,                     // versão das regras (migração automática)
+  paramsV:7,                     // versão das regras (migração automática)
   pontoIni:16, pontoFim:15,      // período do espelho de ponto (informativo)
   jornadaPadraoDia:9,             // horas de trabalho num dia cheio (07-17 com 1h almoço)
   adnIni:22, adnFim:5,            // janela do adicional noturno (usado só no cálculo próprio)
@@ -5899,6 +5905,9 @@ if((+ROBO_PARAMS.paramsV||1)<4){ROBO_PARAMS.heAuthPadrao='nao';ROBO_PARAMS.he50F
 if((+ROBO_PARAMS.paramsV||1)<5){ROBO_PARAMS.heAncora=true;ROBO_PARAMS.heJin=7;ROBO_PARAMS.heJoutSegQui=17;ROBO_PARAMS.heJoutSex=16;ROBO_PARAMS.heTolMin=0;ROBO_PARAMS.paramsV=5;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 // v6: tolerância da companhia de 15 min POR LADO (até 15 min antes/depois não gera custo de HE)
 if((+ROBO_PARAMS.paramsV||1)<6){ROBO_PARAMS.heTolMin=15;if(ROBO_PARAMS.custoHora==null)ROBO_PARAMS.custoHora=0;ROBO_PARAMS.paramsV=6;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
+// v7: custo de horas vem da BASE SALARIAL (salário médio × encargos ÷ base-horas) e a receita
+// é puxada automaticamente da parte de HH do BM aprovado da competência. Campos editáveis na tela.
+if((+ROBO_PARAMS.paramsV||1)<7){ROBO_PARAMS.custoModo='salario';ROBO_PARAMS.custoEncargos=1.79;ROBO_PARAMS.custoBaseHoras=184;if(ROBO_PARAMS.salarioMedia==null)ROBO_PARAMS.salarioMedia=0;ROBO_PARAMS.receitaModo='hhBM';ROBO_PARAMS.paramsV=7;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 
 // ---------------------------------------------------------------------------
 // DE ACORDO HE — autorização manual da HE 50% (o cliente só paga HE autorizada por email)
@@ -8815,6 +8824,56 @@ function driveSync(chave){
 // ---------------------------------------------------------------------------
 // ===== RELATÓRIO DE ANÁLISE — HN × HE validada, minutos de exceção e custo × receita =====
 function _brl(x){return 'R$ '+(Math.round((+x||0)*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+// Base salarial CB8034800 (Efetivo com Salario 05/08) — salario fixo por funcao; nomes/qtd variam
+var SAL_MEDIA=4375.89; // salario medio headcount (N=97)
+var SAL_FUNC={"ALMOXARIFE I":4710.62,"INSPETOR PINTURA INDUSTRIAL":7622.34,"ASSISTENTE MATERIAIS III":4098.91,"PINTOR INDUSTRIAL I":3561.47,"LIDER ANDAIME I":6095.79,"SUPERVISOR PINTURA INDUSTRIAL":7976.49,"SOLDADOR RX":5323.91,"AUXILIAR SERVICOS GERAIS":2007.96,"TECNICO MEDICAO":4630.83,"PINTOR JATISTA":3561.47,"LIDER PINTURA":6095.79,"TECNICO MEIO AMBIENTE":3742.99,"MONTADOR ANDAIMES":3724.62,"PINTOR ESCALADOR I":4150.07,"TECNICO SEGURANCA TRABALHO III":5496.68,"INSPETOR PINTURA N1":7885.27,"ANALISTA ADMINISTRATIVO JR":4622.4,"COORDENADOR TECNICO":16324.29,"TECNICO SEGURANCA TRABALHO II":5002.59,"ELETRICISTA MANUTENCAO I":3724.61,"PROJETISTA":4622.4,"CALDEIREIRO I":4710.62,"AJUDANTE I":2007.96,"LIDER EQUIPE PINTURA I":6095.79,"LIDER MECANICA I":6095.79,"SUPERVISOR ALPINISMO INDUSTRIAL":7684.74,"ENGENHEIRO SEGURANCA TRABALHO I":13778.5,"ANALISTA PLANEJAMENTO JR":5144.73,"MECANICO MONTADOR I":4116.86,"ASSISTENTE PLANEJAMENTO":2870.51,"TECNICO PLANEJAMENTO I":4763.64,"PINTOR LETRISTA":3165.75};
+var SAL_MAT={"CBI9036":{f:"ALMOXARIFE I",s:4710.62},"CBJ4304":{f:"INSPETOR PINTURA INDUSTRIAL",s:7622.34},"CBK8395":{f:"ASSISTENTE MATERIAIS III",s:4098.91},"CBK8483":{f:"PINTOR INDUSTRIAL I",s:3561.47},"CBK8494":{f:"LIDER ANDAIME I",s:6095.79},"CBK8516":{f:"PINTOR INDUSTRIAL I",s:3561.47},"CBK8540":{f:"SUPERVISOR PINTURA INDUSTRIAL",s:7684.74},"CBK8585":{f:"SOLDADOR RX",s:5323.91},"CBK8643":{f:"AUXILIAR SERVICOS GERAIS",s:2007.96},"CBK9034":{f:"TECNICO MEDICAO",s:4630.83},"CBK9156":{f:"PINTOR JATISTA",s:3561.47},"CBK9153":{f:"PINTOR JATISTA",s:3561.47},"CBK9192":{f:"PINTOR JATISTA",s:3561.47},"CBK9613":{f:"PINTOR JATISTA",s:3561.47},"CBK9928":{f:"PINTOR JATISTA",s:3561.47},"CBK9932":{f:"PINTOR JATISTA",s:3561.47},"CBK9943":{f:"LIDER PINTURA",s:6095.79},"CBL2270":{f:"TECNICO MEIO AMBIENTE",s:3742.99},"CBL3736":{f:"MONTADOR ANDAIMES",s:3724.62},"CBL3760":{f:"PINTOR JATISTA",s:3561.47},"CBL3763":{f:"LIDER ANDAIME I",s:6095.79},"CBL3769":{f:"LIDER PINTURA",s:6095.79},"CBL3775":{f:"MONTADOR ANDAIMES",s:3724.62},"CBL3959":{f:"PINTOR ESCALADOR I",s:4150.07},"CBL3963":{f:"TECNICO SEGURANCA TRABALHO III",s:5490.5},"CBL6558":{f:"INSPETOR PINTURA N1",s:7885.27},"CBL6665":{f:"ANALISTA ADMINISTRATIVO JR",s:4622.4},"CBL7330":{f:"COORDENADOR TECNICO",s:16324.29},"CBL7765":{f:"TECNICO SEGURANCA TRABALHO II",s:5002.59},"CBL7786":{f:"ANALISTA ADMINISTRATIVO JR",s:4622.4},"CBM1302":{f:"ELETRICISTA MANUTENCAO I",s:3724.62},"CBM1936":{f:"PROJETISTA",s:4622.4},"CBM2928":{f:"ALMOXARIFE I",s:4710.62},"CBM3271":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM3291":{f:"CALDEIREIRO I",s:4710.62},"CBM3401":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM3451":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM3525":{f:"AJUDANTE I",s:2007.96},"CBM3668":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM3669":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM3713":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM3744":{f:"AJUDANTE I",s:2007.96},"CBM3887":{f:"AJUDANTE I",s:2007.96},"CBM3966":{f:"PINTOR ESCALADOR I",s:4150.07},"CBM4440":{f:"AJUDANTE I",s:2007.96},"CBM4521":{f:"LIDER PINTURA",s:6095.79},"CBM4687":{f:"SUPERVISOR PINTURA INDUSTRIAL",s:8560.0},"CBM4868":{f:"AJUDANTE I",s:2007.96},"CBM4871":{f:"AJUDANTE I",s:2007.96},"CBM4873":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM4874":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM4876":{f:"LIDER ANDAIME I",s:6095.79},"CBM4877":{f:"PINTOR INDUSTRIAL I",s:3561.47},"CBM4878":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM4883":{f:"PINTOR JATISTA",s:3561.47},"CBM4884":{f:"PINTOR JATISTA",s:3561.47},"CBM5005":{f:"SUPERVISOR PINTURA INDUSTRIAL",s:7684.74},"CBM5127":{f:"LIDER EQUIPE PINTURA I",s:6095.79},"CBM5207":{f:"LIDER MECANICA I",s:6095.79},"CBM5211":{f:"SUPERVISOR ALPINISMO INDUSTRIAL",s:7684.74},"CBM5243":{f:"AJUDANTE I",s:2007.96},"CBM5311":{f:"PINTOR ESCALADOR I",s:4150.07},"CBM5323":{f:"TECNICO SEGURANCA TRABALHO III",s:5502.85},"CBM5390":{f:"ENGENHEIRO SEGURANCA TRABALHO I",s:13778.5},"CBM5759":{f:"AUXILIAR SERVICOS GERAIS",s:2007.96},"CBM5923":{f:"PINTOR ESCALADOR I",s:4150.07},"CBM5973":{f:"PINTOR ESCALADOR I",s:4150.07},"CBM6145":{f:"PINTOR ESCALADOR I",s:4150.07},"CBM6242":{f:"ANALISTA PLANEJAMENTO JR",s:5144.73},"CBM6610":{f:"MECANICO MONTADOR I",s:4116.86},"CBM6665":{f:"ASSISTENTE PLANEJAMENTO",s:2870.51},"CBM6680":{f:"TECNICO PLANEJAMENTO I",s:4763.64},"CBM8161":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM8185":{f:"TECNICO SEGURANCA TRABALHO II",s:5002.59},"CBM8240":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM8266":{f:"AJUDANTE I",s:2007.96},"CBM8267":{f:"PINTOR JATISTA",s:3561.47},"CBM8274":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM8293":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM8294":{f:"PINTOR JATISTA",s:3561.47},"CBM8364":{f:"PINTOR INDUSTRIAL I",s:3561.47},"CBM8417":{f:"AJUDANTE I",s:2007.96},"CBM8419":{f:"LIDER PINTURA",s:6095.79},"CBM8420":{f:"AJUDANTE I",s:2007.96},"CBM8427":{f:"PINTOR INDUSTRIAL I",s:3561.47},"CBM8428":{f:"PINTOR JATISTA",s:3561.47},"CBM8431":{f:"PINTOR JATISTA",s:3561.47},"CBM8436":{f:"AJUDANTE I",s:2007.96},"CBM8446":{f:"MECANICO MONTADOR I",s:4116.86},"CBM8464":{f:"PINTOR INDUSTRIAL I",s:3561.47},"CBM8465":{f:"PINTOR JATISTA",s:3561.47},"CBM8550":{f:"PINTOR JATISTA",s:3561.47},"CBM8659":{f:"TECNICO SEGURANCA TRABALHO II",s:5002.59},"CBM8684":{f:"PINTOR LETRISTA",s:3165.75},"CBM8709":{f:"PINTOR JATISTA",s:3561.47},"CBM8726":{f:"MONTADOR ANDAIMES",s:3724.62},"CBM8797":{f:"ELETRICISTA MANUTENCAO I",s:3724.61}};
+
+// ---- RECEITA da competência a partir do BM aprovado (parte de HH x total) ----
+// Lê o boletim consolidado do mês (cbsi-v15-bm-mesdata, chaveado por número do mês)
+// e separa a receita de MÃO DE OBRA (linhas un/tipo HH) do total (que inclui equipamentos/verbas).
+function bmReceitaComp(mes){
+  var out={hh:0,total:0,hhQtd:0,arquivo:'',ok:false};
+  try{
+    var bm=JSON.parse(localStorage.getItem('cbsi-v15-bm-mesdata')||'{}');
+    var m=bm[String(+mes)]||bm[String(mes)]; if(!m)return out;
+    out.total=+m.total||0; out.arquivo=m.arquivo||'';
+    (m.rows||[]).forEach(function(r){
+      var un=String(r.un||r.u||'').toUpperCase(), tp=String(r.t||'').toUpperCase();
+      var v=(+r.v!=null? +r.v : ((+r.pu||0)*(+r.q||+r.nm||0)))||0;
+      var q=(+r.q!=null? +r.q : (+r.nm||0))||0;
+      if(un==='HH'||tp==='HH'){out.hh+=v; out.hhQtd+=q;}
+    });
+    out.ok=true;
+  }catch(e){}
+  return out;
+}
+// custo-hora médio efetivo (base salarial × encargos ÷ base-horas) OU manual
+function custoHoraEfetivo(){
+  var P=ROBO_PARAMS;
+  if(P.custoModo==='manual')return +P.custoHora||0;
+  var sal=(+P.salarioMedia>0)?(+P.salarioMedia):(typeof SAL_MEDIA!=='undefined'?SAL_MEDIA:0);
+  var base=(+P.custoBaseHoras>0)?(+P.custoBaseHoras):184;
+  var enc=(+P.custoEncargos>0)?(+P.custoEncargos):1;
+  return sal*enc/base;
+}
+// custo POR COLABORADOR (drill): usa o salário da matrícula (ou da função) → custo-hora individual;
+// cai para o custo-hora médio quando não acha na base salarial. Horas ponderadas pela equivalência dos recebíveis.
+function custoColab(c){
+  var P=ROBO_PARAMS, base=(+P.custoBaseHoras>0)?(+P.custoBaseHoras):184, enc=(+P.custoEncargos>0)?(+P.custoEncargos):1;
+  var sal=0, fonte='média';
+  try{
+    if(P.custoModo!=='manual'){
+      var m=(typeof SAL_MAT!=='undefined')?SAL_MAT[String(c.mat||'').trim()]:null;
+      if(m&&m.s){sal=+m.s;fonte='matrícula';}
+      else{var fn=normTxt(c.funcQQP||c.cargo||'');if(typeof SAL_FUNC!=='undefined'){var kk=Object.keys(SAL_FUNC).find(function(k){return normTxt(k)===fn});if(kk){sal=+SAL_FUNC[kk];fonte='função';}}}
+    }
+  }catch(e){}
+  var ch=(sal>0)?(sal*enc/base):custoHoraEfetivo();
+  var pond=(+c.hn||0)+(+c.he50||0)*1.5+(+c.he100||0)*2+(+c.he150||0)*2.5+(+c.adn||0)*0.2;
+  return {ch:ch,custo:ch*pond,fonte:fonte};
+}
+
 function analiseDados(FA){
   var P=ROBO_PARAMS,regs=(FA&&FA.regs)?FA.regs:[];
   var JIN=(+P.heJin||7),tol=(+P.heTolMin||0)/60;
@@ -8844,13 +8903,23 @@ function analiseDados(FA){
       c.semBatida++;
     }
   });
-  var ch=(+P.custoHora||0);
+  var ch=custoHoraEfetivo();
+  // CUSTO só sobre horas que viram custo: HN + HE VALIDADA (he50, não he50ap) + HE100 + HE150 + ADN·20%
   var custo={hn:ch*T.hn,he50:ch*1.5*T.he50,he100:ch*2*T.he100,he150:ch*2.5*T.he150,adn:ch*0.2*T.adn};
   custo.total=custo.hn+custo.he50+custo.he100+custo.he150+custo.adn;
-  var receita=(+P.receitaRef||0),alvo=(+P.custoAlvo||70);
+  // RECEITA: parte de HH do BM aprovado da competência (ou total, ou manual)
+  var mesComp=(FA&&FA.compMesEff)?FA.compMesEff:null;
+  var bmR=mesComp?bmReceitaComp(mesComp):{hh:0,total:0,hhQtd:0,arquivo:'',ok:false};
+  var receita=(P.receitaModo==='manual')?(+P.receitaRef||0):(P.receitaModo==='totalBM'?bmR.total:bmR.hh);
+  var alvo=(+P.custoAlvo||70);
   var relacao=receita>0?(custo.total/receita*100):0;
-  return {T:T,byC:byC,custoHora:ch,custo:custo,receita:receita,alvo:alvo,relacao:relacao,
-    horasCusto:T.hn+T.he50*1.5+T.he100*2+T.he150*2.5};
+  // horas ponderadas que geram custo (realizado validado)
+  var horasCusto=T.hn+T.he50*1.5+T.he100*2+T.he150*2.5+T.adn*0.2;
+  // realizado bruto (soma simples de horas apontadas que entram na conta) × esperado (HH faturado no BM)
+  var realHoras=T.hn+T.he50+T.he100+T.he150+T.adn;
+  return {T:T,byC:byC,custoHora:ch,custoModo:P.custoModo,custo:custo,receita:receita,receitaModo:P.receitaModo,
+    bmHH:bmR.hh,bmTotal:bmR.total,bmHHqtd:bmR.hhQtd,bmArquivo:bmR.arquivo,bmOk:bmR.ok,mesComp:mesComp,
+    alvo:alvo,relacao:relacao,horasCusto:horasCusto,realHoras:realHoras};
 }
 function analiseHTML(FA,con){
   var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS;
@@ -8880,23 +8949,45 @@ function analiseHTML(FA,con){
     +kp('HE 50% não recon.',h2hm(cortada),'var(--rd)','sem autorização')
     +kp('Minutos exceção',h2hm(T.exAntes+T.exApos),'var(--ca)',exList.length+' colab.')
     +'</div>';
+  // NOTA DE RASTREABILIDADE — o que vira custo e o que NÃO vira (para gerência/diretoria)
+  h+='<div style="font-size:8px;background:rgba(0,196,140,.07);border:1px solid rgba(0,196,140,.3);border-radius:5px;padding:6px 8px;margin-bottom:6px;line-height:1.6">'
+    +'🧭 <b>Rastreabilidade custo × recebível (o que entra na conta):</b> só viram <u>custo</u> as horas que também são <u>recebíveis</u> — <b>HN</b> + <b>HE 50% VALIDADA</b> (reconhecida no De Acordo) + HE 100% + HE 150%. '
+    +'A <b>HE 50% apurada de '+h2hm(T.he50ap)+'</b> teve <b style="color:var(--gn)">'+h2hm(T.he50)+' reconhecida</b> e <b style="color:var(--rd)">'+h2hm(cortada)+' NÃO reconhecida</b>. '
+    +'Essas '+h2hm(cortada)+' vêm da <b>regra de tolerância</b> (batida até '+(+P.heTolMin||0)+' min antes das 07:00 / até '+(+P.heTolMin||0)+' min após 17:00-16:00, e dias sem De Acordo): '
+    +'<b>o ponto é registrado, mas NÃO gera custo nem recebível</b>. Rastreado, apontado, e corretamente fora da conta.'
+    +'</div>';
   // CUSTO × RECEITA
+  var margem=d.receita-d.custo.total;
   h+='<div style="border:1px solid var(--bd);border-radius:6px;padding:8px;margin-bottom:6px">'
-    +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:5px">💰 CUSTO × RECEITA — está aderente?</div>'
-    +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:9px;margin-bottom:6px">'
-    +'<span>Custo-hora (R$/h): <input type="number" step="0.01" min="0" value="'+(P.custoHora||'')+'" onchange="roboSetParam(\'custoHora\',this.value)" placeholder="0,00" style="width:80px;font-size:10px;padding:3px;font-weight:700"></span>'
-    +'<span>Receita do período — BM/faturável (R$): <input type="number" step="0.01" min="0" value="'+(P.receitaRef||'')+'" onchange="roboSetParam(\'receitaRef\',this.value)" placeholder="0,00" style="width:120px;font-size:10px;padding:3px;font-weight:700"></span>'
-    +'<span>Alvo custo/receita (%): <input type="number" step="1" min="0" max="200" value="'+(+P.custoAlvo||70)+'" onchange="roboSetParam(\'custoAlvo\',this.value)" style="width:56px;font-size:10px;padding:3px"></span>'
+    +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:5px">💰 CUSTO × RECEITA — está aderente? <span style="font-weight:400;color:var(--dm)">(competência '+((FA&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'—')+')</span></div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:9px;margin-bottom:6px">'
+    +'<span>Custo-hora: <select onchange="roboSetParamStr(\'custoModo\',this.value)" style="font-size:9px"><option value="salario" '+(P.custoModo!=='manual'?'selected':'')+'>base salarial</option><option value="manual" '+(P.custoModo==='manual'?'selected':'')+'>manual</option></select></span>'
+    +(P.custoModo!=='manual'
+       ?('<span>Salário médio (R$): <input type="number" step="0.01" min="0" value="'+((+P.salarioMedia>0)?P.salarioMedia:(typeof SAL_MEDIA!=='undefined'?SAL_MEDIA:''))+'" onchange="roboSetParam(\'salarioMedia\',this.value)" title="0 = usa o salário médio da base ('+(typeof SAL_MEDIA!=='undefined'?_brl(SAL_MEDIA):'—')+')" style="width:78px;font-size:10px;padding:3px;font-weight:700"></span>'
+         +'<span>× encargos: <input type="number" step="0.01" min="0" value="'+(+P.custoEncargos||1.79)+'" onchange="roboSetParam(\'custoEncargos\',this.value)" style="width:50px;font-size:10px;padding:3px"></span>'
+         +'<span>÷ horas/mês: <input type="number" step="1" min="1" value="'+(+P.custoBaseHoras||184)+'" onchange="roboSetParam(\'custoBaseHoras\',this.value)" style="width:48px;font-size:10px;padding:3px"></span>'
+         +'<span>= <b style="color:var(--ca)">'+_brl(d.custoHora)+'/h</b></span>')
+       :('<span>R$/h manual: <input type="number" step="0.01" min="0" value="'+(P.custoHora||'')+'" onchange="roboSetParam(\'custoHora\',this.value)" placeholder="0,00" style="width:78px;font-size:10px;padding:3px;font-weight:700"></span>'))
     +'</div>'
+    +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:9px;margin-bottom:6px">'
+    +'<span>Receita: <select onchange="roboSetParamStr(\'receitaModo\',this.value)" style="font-size:9px"><option value="hhBM" '+(P.receitaModo==='hhBM'?'selected':'')+'>só HH do BM</option><option value="totalBM" '+(P.receitaModo==='totalBM'?'selected':'')+'>total do BM</option><option value="manual" '+(P.receitaModo==='manual'?'selected':'')+'>manual</option></select></span>'
+    +(P.receitaModo==='manual'
+       ?('<span>R$: <input type="number" step="0.01" min="0" value="'+(P.receitaRef||'')+'" onchange="roboSetParam(\'receitaRef\',this.value)" placeholder="0,00" style="width:110px;font-size:10px;padding:3px;font-weight:700"></span>')
+       :('<span style="color:var(--dm)">'+(d.bmOk?('BM: '+_brl(d.bmHH)+' HH · '+_brl(d.bmTotal)+' total'+(d.bmArquivo?(' · '+d.bmArquivo):'')):'⚠️ BM da competência não encontrado no Drive/mês')+'</span>'))
+    +'<span>Alvo (%): <input type="number" step="1" min="0" max="200" value="'+(+P.custoAlvo||70)+'" onchange="roboSetParam(\'custoAlvo\',this.value)" style="width:50px;font-size:10px;padding:3px"></span>'
+    +'</div>'
+    // ESPERADO (recebível BM) × REALIZADO (apurado validado) — quantidade e grana
+    +'<div style="overflow:auto;margin-bottom:6px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="background:var(--c1)"><th style="text-align:left;padding:3px">Esperado × Realizado</th><th>Horas</th><th>R$</th></tr>'
+    +'<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px">📈 Esperado — recebível de HH (BM aprovado)</td><td style="text-align:center">'+(d.bmHHqtd?h2hm(d.bmHHqtd):'—')+'</td><td style="text-align:right;color:var(--gn);font-weight:700">'+_brl(d.bmHH)+'</td></tr>'
+    +'<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px">🏭 Realizado — horas que viram custo (validado)</td><td style="text-align:center">'+h2hm(d.realHoras)+' <span style="color:var(--dm)">('+h2hm(d.horasCusto)+' pond.)</span></td><td style="text-align:right;color:var(--rd);font-weight:700">'+_brl(d.custo.total)+'</td></tr>'
+    +'<tr><td style="text-align:left;padding:3px;font-weight:800">Margem (recebível − custo)</td><td style="text-align:center">—</td><td style="text-align:right;font-weight:800;color:'+(margem>=0?'var(--gn)':'var(--rd)')+'">'+_brl(margem)+'</td></tr>'
+    +'</table></div>'
     +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;align-items:center">'
-    +'<span>Horas de custo (HN+HE ponderadas): <b>'+h2hm(d.horasCusto)+'</b></span>'
-    +'<span>Custo total: <b style="color:var(--rd)">'+_brl(d.custo.total)+'</b></span>'
-    +'<span>Receita: <b style="color:var(--gn)">'+_brl(d.receita)+'</b></span>'
-    +'<span>Margem: <b style="color:'+((d.receita-d.custo.total)>=0?'var(--gn)':'var(--rd)')+'">'+_brl(d.receita-d.custo.total)+'</b></span>'
-    +'<span style="font-size:12px;font-weight:900;color:'+cor+'">Custo/Receita: '+(d.receita>0?d.relacao.toFixed(1)+'%':'—')+'</span>'
+    +'<span style="font-size:13px;font-weight:900;color:'+cor+'">Custo/Receita: '+(d.receita>0?d.relacao.toFixed(1)+'%':'—')+'</span>'
     +'<span style="font-weight:800;color:'+cor+'">'+verd+'</span>'
     +'</div>'
-    +'<div style="font-size:7px;color:var(--dm);margin-top:4px">Custo = custo-hora × (HN·1 + HE50·1,5 + HE100·2 + HE150·2,5) + ADN·20%. Receita = o que você fatura no período (BM / medição validada pelo cliente). Ajuste os campos acima; o resto recalcula.</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-top:4px">Custo = custo-hora × (HN·1 + HE50 <b>validada</b>·1,5 + HE100·2 + HE150·2,5) + ADN·20%. Custo-hora = salário médio × encargos ÷ base-horas. Receita = parte de HH da medição aprovada pelo cliente (BM). Vale para qualquer competência selecionada acima.</div>'
     +'</div>';
   // TABELA MINUTOS DE EXCEÇÃO
   h+='<details open id="analiseExcecao"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🎯 Quem gera os minutos de exceção (fora da tolerância) — '+exList.length+' colaborador(es)</summary>'
@@ -9163,9 +9254,11 @@ function renderRobo(){
   // por colaborador
   +'<div><div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:4px">👷 POR COLABORADOR ('+Object.keys(con.porColab).length+')</div>'
   +'<div style="max-height:280px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">'
-  +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Nome</th><th style="text-align:left">Matr.</th><th>Dias</th><th>HN</th><th>50%</th><th>100%</th><th>150%</th><th>ADN</th></tr>'
-  +Object.values(con.porColab).sort(function(a,b){return a.nome<b.nome?-1:1}).map(function(c){
-     return '<tr style="border-bottom:1px solid var(--bd)"><td style="padding:3px;text-align:left" title="'+c.cargo+' → '+c.funcQQP+'">'+c.nome+'</td><td style="text-align:left">'+(c.mat||c.id)+'</td><td style="text-align:center">'+c.dias+'</td><td style="text-align:right">'+n2(c.hn)+'</td><td style="text-align:right">'+n2(c.he50)+'</td><td style="text-align:right">'+n2(c.he100)+'</td><td style="text-align:right">'+n2(c.he150)+'</td><td style="text-align:right">'+n2(c.adn)+'</td></tr>'}).join('')
+  +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Nome</th><th style="text-align:left">Matr.</th><th>Dias</th><th>HN</th><th>50%</th><th>100%</th><th>150%</th><th>ADN</th><th title="custo-hora individual (salário da matrícula/função × encargos ÷ base-horas) × horas ponderadas validadas">Custo R$</th></tr>'
+  +(function(){var somaC=0;var linhas=Object.values(con.porColab).sort(function(a,b){return a.nome<b.nome?-1:1}).map(function(c){
+     var cc=custoColab(c);somaC+=cc.custo;
+     return '<tr style="border-bottom:1px solid var(--bd)"><td style="padding:3px;text-align:left" title="'+c.cargo+' → '+c.funcQQP+' · custo-hora '+_brl(cc.ch)+' ('+cc.fonte+')">'+c.nome+'</td><td style="text-align:left">'+(c.mat||c.id)+'</td><td style="text-align:center">'+c.dias+'</td><td style="text-align:right">'+n2(c.hn)+'</td><td style="text-align:right">'+n2(c.he50)+'</td><td style="text-align:right">'+n2(c.he100)+'</td><td style="text-align:right">'+n2(c.he150)+'</td><td style="text-align:right">'+n2(c.adn)+'</td><td style="text-align:right;font-weight:700;color:var(--rd)">'+_brl(cc.custo)+'</td></tr>'}).join('');
+     return linhas+'<tr style="background:var(--c1);font-weight:800"><td style="padding:3px;text-align:left" colspan="8">TOTAL custo do período</td><td style="text-align:right;color:var(--rd)">'+_brl(somaC)+'</td></tr>';})()
   +'</table></div></div></div>'
   +'</div>'   /* fim relatorios (parte 2) */
   +_sw('dados')
@@ -9466,8 +9559,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=88;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='88 · 07/08/2026 · Competência por MÊS ÚNICO no Ponto (janela 21→20 aplicada sozinha, sem selecionar 2 meses)';
+var CBSI_VER=89;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='89 · 07/08/2026 · Custo×Receita real: base salarial (méd×1,79÷184) + receita HH do BM aprovado + nota de rastreabilidade + custo por colaborador';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
