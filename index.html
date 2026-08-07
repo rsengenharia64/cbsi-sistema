@@ -9170,7 +9170,10 @@ function roboOrganizarBase(){
   [].slice.call(pg.children).forEach(function(ch){
     if(ch===box||!ch.getAttribute)return;
     var t=ch.textContent||'';
-    var sub=/JORNADAS DE TRABALHO/i.test(t)?'jornada':(/M[ÉE]TRICAS DA JORNADA ATIVA/i.test(t)?'exec':'dados');
+    // OCULTA o painel "MÉTRICAS DA JORNADA ATIVA — Impacto no Sistema": as horas dele divergiam das
+    // informações da Visão Executiva e confundiam. Escondido a pedido do gestor.
+    if(/M[ÉE]TRICAS DA JORNADA ATIVA/i.test(t)){ch.style.display='none';ch.setAttribute('data-oculto','1');return;}
+    var sub=/JORNADAS DE TRABALHO/i.test(t)?'jornada':'dados';
     ch.classList.add('rsub');ch.setAttribute('data-sub',sub);
   });
   try{window.roboSub(ROBO_SUB)}catch(e){}
@@ -9359,7 +9362,11 @@ function renderRobo(){
   +_sw('exec')+execHTML(FA,con)
   // KPIs
   +'<div class="g g5" style="margin-bottom:8px">'
-  +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')+kpi('HE 50% apur.→pagar',h2hm(tot.he50ap)+' → '+h2hm(tot.he50),'var(--ca)')+kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
+  +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')
+  +'<div style="border:1px solid var(--bd);border-radius:8px;padding:8px;text-align:center"><div style="font-size:8px;color:var(--dm);font-weight:700">HE 50% — APURADA → VALIDADA</div>'
+    +'<div style="font-size:15px;font-weight:800"><span style="color:var(--co)" title="apurada = trabalhada (bruta)">'+h2hm(tot.he50ap)+'</span> <span style="color:var(--dm);font-weight:400">→</span> <span style="color:var(--gn)" title="validada no De Acordo HE = o que vai pagar/faturar">'+h2hm(tot.he50)+'</span></div>'
+    +'<div style="font-size:7px;color:var(--dm)">1º = apurada (trabalhada) · 2º = validada (a pagar)</div></div>'
+  +kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
   +'</div>'
   +'</div>'   /* fim exec */
   +_sw('relatorios')
@@ -9712,8 +9719,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=95;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='95 · 07/08/2026 · Correção dias decorridos: conta até HOJE dentro da janela 21→20 (antes usava a última data do espelho 16→15, que traz dias futuros e inflava o previsto de 60,9% p/ 82,6%)';
+var CBSI_VER=96;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='96 · 07/08/2026 · Oculta painel MÉTRICAS DA JORNADA ATIVA (horas divergentes) + KPI HE 50% deixa explícito apurada → validada (a pagar)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
