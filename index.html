@@ -6681,9 +6681,27 @@ function roboFiltroAtivo(){
     return{modo:modo,regs:regs2,rotulo:fmtD(di).replace(/\//g,'-')+'_a_'+fmtD(df).replace(/\//g,'-'),
            titulo:'Período personalizado (medição parcial): '+fmtD(di)+' a '+fmtD(df),periodos:[{desc:fmtD(di)+' a '+fmtD(df)}]};
   }
-  // modo 'comp' — competência(s) do filtro global de meses
-  var meses=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)meses=[...SM].sort(function(a,b){return a-b})}catch(e){}
+  // modo 'comp' — COMPETÊNCIA POR MÊS ÚNICO (padrão): você seleciona só o mês e o motor
+  // aplica sozinho a janela 21/mês-anterior a 20/mês (segue medIni→medFim). Não precisa marcar
+  // dois meses. Escape hatch: compMes==='topo' mantém o comportamento antigo (2 meses = 1 janela).
   var ano=(typeof Y!=='undefined')?Y:(new Date()).getFullYear();
+  var _sel=ROBO_UI.compMes;
+  if(_sel!=='topo'){
+    var _cm=+_sel||0;
+    if(!_cm){ // deriva do filtro global (último mês) ou do mês atual, para já funcionar sem configurar
+      try{if(typeof SM!=='undefined'&&SM&&SM.size)_cm=[...SM].sort(function(a,b){return a-b}).pop();}catch(e){}
+      if(!_cm)_cm=(new Date()).getMonth()+1;
+    }
+    var _cy=+ROBO_UI.compAno||ano;
+    var P1=periodoDaCompetencia(_cm,_cy);
+    var regsU=ROBO_LANC.filter(function(l){var d=dataBR(l.data);return d>=P1.ini&&d<=P1.fim});
+    return{modo:modo,compMesEff:_cm,compAnoEff:_cy,regs:regsU,
+      rotulo:MESES_NOMES[_cm]+'-'+_cy,
+      titulo:'Competência '+MESES_NOMES[_cm]+'/'+_cy+' — apuração '+P1.desc+' · NF em '+P1.nf+' · mês único (a parte do mês anterior entra automaticamente)',
+      periodos:[{comp:MESES_NOMES[_cm]+'/'+_cy,desc:P1.desc,nf:P1.nf}]};
+  }
+  // --- legado 'topo': competência(s) a partir do filtro global de meses (2 meses = 1 janela) ---
+  var meses=[];try{if(typeof SM!=='undefined'&&SM&&SM.size)meses=[...SM].sort(function(a,b){return a-b})}catch(e){}
   if(!meses.length)return{modo:modo,regs:ROBO_LANC.slice(),rotulo:'GERAL',titulo:'Todas as competências (nenhum mês selecionado no filtro global)',periodos:[]};
   // inteligência da seleção: a apuração da competência JUL cobre 21/06–20/07, então o usuário
   // seleciona JUN+JUL no cabeçalho para enxergar a janela toda — isso é UMA competência (JUL).
@@ -6922,6 +6940,8 @@ window.roboSetModo=function(v){ROBO_UI.modo=v;roboUISave();renderRobo()};
 window.roboSetDe=function(v){ROBO_UI.de=v;roboUISave();renderRobo()};
 window.roboSetAte=function(v){ROBO_UI.ate=v;roboUISave();renderRobo()};
 window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
+window.roboSetCompMes=function(v){ROBO_UI.compMes=(v==='topo'?'topo':(+v||''));roboUISave();renderRobo()};
+window.roboSetCompAno=function(v){ROBO_UI.compAno=(+v||'');roboUISave();renderRobo()};
 window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 window.roboSetParamStr=function(k,v){ROBO_PARAMS[k]=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 // Competência do BOLETIM DE MEDIÇÃO — o BM original era fixo em Jan/Fev (MED1/MED1A);
@@ -9110,10 +9130,17 @@ function renderRobo(){
   +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
   +'<span style="font-size:9px;font-weight:700;color:var(--dm)">APURAÇÃO:</span>'
   +'<select onchange="roboSetModo(this.value)" style="font-size:10px;padding:4px 8px;font-weight:700">'
-  +'<option value="comp" '+(FA.modo==='comp'?'selected':'')+'>🎯 Competência de medição (filtro de meses)</option>'
+  +'<option value="comp" '+(FA.modo==='comp'?'selected':'')+'>🎯 Competência (mês único — janela automática)</option>'
   +'<option value="custom" '+(FA.modo==='custom'?'selected':'')+'>📅 Período manual (medição parcial)</option>'
   +'<option value="ref" '+(FA.modo==='ref'?'selected':'')+'>📄 Por espelho de ponto</option>'
   +'</select>'
+  +(FA.modo==='comp'?('<select onchange="roboSetCompMes(this.value)" style="font-size:10px;padding:4px 6px;font-weight:700" title="Escolha só o mês — a parte do mês anterior (dia '+ROBO_PARAMS.medIni+') entra sozinha na apuração">'
+       +[1,2,3,4,5,6,7,8,9,10,11,12].map(function(m){return '<option value="'+m+'" '+((FA.compMesEff===m&&ROBO_UI.compMes!=='topo')?'selected':'')+'>'+MESES_NOMES[m]+'</option>'}).join('')
+       +'<option value="topo" '+(ROBO_UI.compMes==='topo'?'selected':'')+'>▤ 2 meses (usar filtro do topo)</option>'
+     +'</select>'
+     +'<input type="number" min="2024" max="2031" value="'+(FA.compAnoEff||(+ROBO_UI.compAno||((typeof Y!=='undefined')?Y:2026)))+'" onchange="roboSetCompAno(this.value)" style="width:58px;font-size:9px;padding:3px" title="Ano da competência">'
+     +(FA.periodos&&FA.periodos.length?('<span style="font-size:8px;color:var(--cs);font-weight:700" title="Janela de apuração aplicada automaticamente">▸ '+FA.periodos.map(function(p){return p.desc}).join(' | ')+'</span>'):'')
+    ):'')
   +(FA.modo==='custom'?('<input type="date" value="'+(ROBO_UI.de||'')+'" onchange="roboSetDe(this.value)" style="font-size:9px;padding:3px"> <span style="font-size:9px">a</span> <input type="date" value="'+(ROBO_UI.ate||'')+'" onchange="roboSetAte(this.value)" style="font-size:9px;padding:3px">'):'')
   +(FA.modo==='ref'?('<select onchange="roboSetRefManual(this.value)" style="font-size:9px;padding:3px"><option value="">Todos os espelhos</option>'+refs.map(function(r){return '<option '+(r===ROBO_UI.ref?'selected':'')+'>'+r+'</option>'}).join('')+'</select>'):'')
   +'<span id="roboRef" style="display:none">'+FA.rotulo+'</span>'
@@ -9439,8 +9466,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=87;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='87 · 07/08/2026 · HN arredonda p/ jornada cheia quando H≥9h (não joga abaixo de 9) + Atualização Completa + FAB';
+var CBSI_VER=88;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='88 · 07/08/2026 · Competência por MÊS ÚNICO no Ponto (janela 21→20 aplicada sozinha, sem selecionar 2 meses)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
