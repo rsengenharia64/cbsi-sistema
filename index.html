@@ -8296,6 +8296,32 @@ function pintRecalcDerivados(corte){
     }
   }catch(e){console.warn('PINT_MES recalc:',e)}
 }
+// PRODUTIVIDADE REAL (histórico do ponto) = realizado m² ÷ pessoa-dia de pintura, por mês.
+// Só meses com ponto COMPLETO (≥15 dias distintos) entram — evita distorção de mês parcial.
+function prodRealHistorico(){
+  var out={meses:[],refIdx:-1,refDia:0,refHH:0,refReal:0,refPD:0,refHHtot:0,mediaDia:0,sReal:0,sPD:0,meta:6.94};
+  try{
+    var M=(typeof PINT_MES!=='undefined')?PINT_MES:window.PINT_MES; if(!M||M.length<12)return out;
+    var L=(typeof ROBO_LANC!=='undefined')?ROBO_LANC:[];
+    out.meta=(typeof PROD_PARAMS!=='undefined'&&PROD_PARAMS)?(+PROD_PARAMS.pintM2Dia||6.94):6.94;
+    var ano=2026;try{if(typeof Y!=='undefined')ano=Y}catch(e){}
+    function isPint(c){c=String(c||'').toUpperCase();return /PINTOR|JATISTA|ESCALADOR|LETRISTA/.test(c);}
+    var pd=[],hh=[],dts=[];for(var i=0;i<12;i++){pd[i]=0;hh[i]=0;dts[i]={};}
+    L.forEach(function(l){
+      if(!isPint(l.cargo||l.funcQQP))return;
+      var p=String(l.data||'').split('/'); if(p.length<3)return; var mm=(+p[1])-1,yy=+p[2]; if(yy<100)yy+=2000; if(yy!==ano||mm<0||mm>11)return;
+      if((+l.trab||0)>0){pd[mm]++;dts[mm][l.data]=1;}
+      hh[mm]+=(+l.hn||0)+(+l.he50||0)+(+l.he100||0)+(+l.he150||0);
+    });
+    for(var i=0;i<12;i++){
+      var real=+M[i].real||0, pdi=pd[i], nd=Object.keys(dts[i]).length, completo=(nd>=15);
+      out.meses.push({mes:i+1,real:real,pessoaDia:pdi,hh:Math.round(hh[i]),dias:nd,completo:completo,m2Dia:(completo&&pdi>0)?(real/pdi):0,m2HH:(completo&&hh[i]>0)?(real/hh[i]):0});
+      if(completo&&pdi>0){out.sReal+=real;out.sPD+=pdi;out.refIdx=i;out.refDia=real/pdi;out.refHH=(hh[i]>0?real/hh[i]:0);out.refReal=real;out.refPD=pdi;out.refHHtot=hh[i];}
+    }
+    out.mediaDia=out.sPD>0?(out.sReal/out.sPD):0;
+  }catch(e){console.warn('prodRealHistorico:',e)}
+  return out;
+}
 // gráfico "Previsto vs Realizado" do Dashboard → 3 barras: Capacidade prevista ×
 // Demanda Disponibilizada (por laudo, da planilha) × Realizado, com % de aproveitamento.
 // Sem a barra de demanda, a equipe parece improdutiva quando a demanda liberada é
@@ -8340,6 +8366,29 @@ function fixDashPrevReal(){
         +'<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:#E0A800"></span>Demanda disponibilizada (m² por laudo)</span>'
         +'<span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:2px;background:var(--co)"></span>Realizado</span>'
         +'<span style="margin-left:auto;font-weight:800;color:#B8860B">✔ Aproveitamento da demanda'+(parcial?' (período)':'')+': '+apG+'%</span>';
+      // PRODUTIVIDADE REAL (histórico do ponto) — bloco logo abaixo do gráfico
+      try{
+        var pr=prodRealHistorico();
+        var MN=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        var box=document.getElementById('prodRealBox');
+        if(!box){box=document.createElement('div');box.id='prodRealBox';box.style.marginTop='6px';card.appendChild(box);}
+        if(pr.refIdx>=0){
+          var pct=pr.meta>0?Math.round(pr.refDia/pr.meta*100):0;
+          var cor=pct>=90?'var(--gn)':(pct>=70?'#c9a000':'var(--co)');
+          var nb2=function(x){return (Math.round(x*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})};
+          var nb3=function(x){return (Math.round(x*1000)/1000).toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})};
+          box.innerHTML='<div style="border-top:1px dashed var(--bd);padding-top:6px;font-size:8px;color:var(--dm);line-height:1.5">'
+            +'<b style="color:var(--co);font-size:9px">📐 PRODUTIVIDADE REAL (ponto) — '+MN[pr.refIdx]+'/2026:</b> '
+            +'<b style="color:'+cor+';font-size:13px">'+nb2(pr.refDia)+' m²/pessoa-dia</b> '
+            +'· <b style="color:'+cor+'">'+nb3(pr.refHH)+' m²/HH</b> '
+            +'· <b style="color:'+cor+'">'+pct+'% da meta ('+nb2(pr.meta)+' m²/p-dia)</b>'
+            +(pr.sPD>0&&Math.abs(pr.mediaDia-pr.refDia)>0.01?(' · média meses completos: <b>'+nb2(pr.mediaDia)+'</b> m²/p-dia'):'')
+            +'<div style="font-size:7px;margin-top:2px">Base = realizado m² ÷ pessoa-dia de pintura, só meses com ponto completo (≥15 dias): '+Math.round(pr.refReal).toLocaleString('pt-BR')+' m² ÷ '+pr.refPD+' pessoa-dia · '+Math.round(pr.refHHtot).toLocaleString('pt-BR')+' HH. Conforme mais espelhos de ponto entram, o histórico se firma. Fator sugerido p/ contrato: <b>'+nb2(pr.refDia)+' m²/p-dia</b> ('+pct+'% da meta).</div>'
+            +'</div>';
+        }else{
+          box.innerHTML='<div style="border-top:1px dashed var(--bd);padding-top:6px;font-size:7px;color:var(--dm)">📐 Produtividade real: aguardando um mês com <b>ponto completo</b> (≥15 dias) para calcular m²/pessoa-dia. Suba os espelhos de ponto do mês para habilitar.</div>';
+        }
+      }catch(e){console.warn('prodRealBox:',e)}
     }
   }catch(e){console.warn('fixDashPrevReal:',e)}
 }
@@ -9735,8 +9784,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=97;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='97 · 07/08/2026 · Separa a TOLERÂNCIA de 15 min (06:45-07:00 e 17:00-17:15 = trabalhada mas não vira HE) do resto: KPI + nota 3 grupos + tabela por colaborador';
+var CBSI_VER=98;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='98 · 07/08/2026 · Produtividade real (m²/pessoa-dia) do ponto abaixo do gráfico Capacidade×Demanda×Realizado — Julho 4,41 m²/p-dia (63% da meta), só meses com ponto completo';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
