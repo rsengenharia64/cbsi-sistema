@@ -8750,8 +8750,10 @@ function analiseDados(FA){
     T.hn+=(+l.hn||0);T.he50ap+=(+l.he50ap||0);T.he50+=(+l.he50||0);T.he100+=(+l.he100||0);T.he150+=(+l.he150||0);T.adn+=(+l.adn||0);
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
-    var c=byC[id]=byC[id]||{nome:l.nome||id,func:l.funcQQP||l.cargo||'',diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,dias:0};
+    var c=byC[id]=byC[id]||{nome:l.nome||id,mat:l.mat||'',func:l.funcQQP||l.cargo||'',diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,atestado:0,falta:0,dias:0};
     c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
+    var _o=String((l.obs||'')+' '+(l.phtd||''));
+    if(/ATESTADO/i.test(_o))c.atestado++;else if(/FALTA|AUSENC/i.test(_o))c.falta++;
     var marcas=String(l.mk||'').split('|').filter(Boolean).map(hm2h);
     var dN=normTxt(l.dow);
     if(marcas.length>=2){
@@ -8779,6 +8781,7 @@ function analiseHTML(FA,con){
   var cortada=T.he50ap-T.he50;
   var exList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return c.diasExc>0}).sort(function(x,y){return (y.minAntes+y.minApos)-(x.minAntes+x.minApos)});
   var sbList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return c.semBatida>0}).sort(function(x,y){return y.semBatida-x.semBatida});
+  var atList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.atestado||0)+(c.falta||0)>0}).sort(function(x,y){return ((y.atestado||0)+(y.falta||0))-((x.atestado||0)+(x.falta||0))});
   var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
   var verd=d.receita<=0?'informe a receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE — custo ≥ receita':(d.relacao>=d.alvo?'🟡 ATENÇÃO — acima do alvo':'🟢 ADERENTE'));
   function kp(l,v,c,s){return '<div class="kp" style="border-top:2px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+'">'+v+'</div>'+(s?'<div class="ks">'+s+'</div>':'')+'</div>';}
@@ -8820,19 +8823,23 @@ function analiseHTML(FA,con){
     +'<div style="font-size:7px;color:var(--dm);margin-top:4px">Custo = custo-hora × (HN·1 + HE50·1,5 + HE100·2 + HE150·2,5) + ADN·20%. Receita = o que você fatura no período (BM / medição validada pelo cliente). Ajuste os campos acima; o resto recalcula.</div>'
     +'</div>';
   // TABELA MINUTOS DE EXCEÇÃO
-  h+='<details open><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🎯 Quem gera os minutos de exceção (fora da tolerância) — '+exList.length+' colaborador(es)</summary>'
+  h+='<details open id="analiseExcecao"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🎯 Quem gera os minutos de exceção (fora da tolerância) — '+exList.length+' colaborador(es)</summary>'
     +'<div style="max-height:220px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
     +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Função</th><th>Dias c/ exceção</th><th>Min. antes 07:00</th><th>Min. após 17:00</th><th>Total exceção</th><th>HE apur.</th><th>HE validada</th></tr>'
     +(exList.length?exList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center">'+c.diasExc+'</td><td style="text-align:center">'+h2hm(c.minAntes)+'</td><td style="text-align:center">'+h2hm(c.minApos)+'</td><td style="text-align:center;font-weight:800;color:var(--ca)">'+h2hm(c.minAntes+c.minApos)+'</td><td style="text-align:center">'+h2hm(c.he50ap)+'</td><td style="text-align:center;color:var(--gn);font-weight:700">'+h2hm(c.he50)+'</td></tr>'}).join(''):'<tr><td colspan="8" style="text-align:center;padding:8px;color:var(--dm)">Nenhuma batida fora da tolerância no período.</td></tr>')
     +'</table></div></details>';
-  // SEM BATIDA (perdidos na área)
-  if(sbList.length){
-    h+='<details style="margin-top:4px"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--rd)">⚠️ Colaboradores com dias sem batida em dia útil (sem apontamento → não fatura) — '+sbList.length+'</summary>'
-      +'<div style="max-height:160px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
-      +'<tr style="background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Função</th><th>Dias sem batida</th></tr>'
-      +sbList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td></tr>'}).join('')
-      +'</table></div></details>';
-  }
+  // SEM BATIDA (perdidos na área) — sempre renderiza (id fixo p/ o link da Visão Executiva)
+  h+='<details style="margin-top:4px"'+(sbList.length?' open':'')+' id="analiseSemBatida"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--rd)">⚠️ Colaboradores com dias sem batida em dia útil (sem apontamento → não fatura) — '+sbList.length+'</summary>'
+    +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Dias sem batida</th></tr>'
+    +(sbList.length?sbList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td></tr>'}).join(''):'<tr><td colspan="4" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum colaborador sem apontamento no período.</td></tr>')
+    +'</table></div></details>';
+  // ATESTADO / FALTA por colaborador (id fixo p/ o link da Visão Executiva)
+  h+='<details style="margin-top:4px" id="analiseAtestado"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--co)">🩺 Colaboradores com atestado / falta — '+atList.length+'</summary>'
+    +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Atestado</th><th>Falta/Ausência</th></tr>'
+    +(atList.length?atList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;color:var(--co);font-weight:700">'+(c.atestado||0)+'</td><td style="text-align:center;color:var(--rd);font-weight:700">'+(c.falta||0)+'</td></tr>'}).join(''):'<tr><td colspan="5" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum atestado/falta no período.</td></tr>')
+    +'</table></div></details>';
   h+='</div>';
   return h;
 }
@@ -8902,6 +8909,17 @@ function roboOrganizarBase(){
   try{window.roboSub(ROBO_SUB)}catch(e){}
 }
 window.roboOrganizarBase=roboOrganizarBase;
+// clicar numa caixinha da Visão Executiva → vai para a sub-aba e destaca o detalhamento
+window.roboIrDetalhe=function(sub,elId){
+  try{window.roboSub(sub);}catch(e){}
+  setTimeout(function(){
+    var e=document.getElementById(elId);if(!e)return;
+    if(e.tagName==='DETAILS')e.open=true;
+    e.scrollIntoView({behavior:'smooth',block:'center'});
+    var o=e.style.outline;e.style.outline='3px solid var(--ca)';e.style.outlineOffset='2px';
+    setTimeout(function(){e.style.outline=o;e.style.outlineOffset=''},1800);
+  },90);
+};
 // VISÃO EXECUTIVA — bate o olho: efetivo presente/faltante, capacidade × registrado, horas e aderência
 function execHTML(FA,con){
   var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS,regs=(FA&&FA.regs)?FA.regs:[];
@@ -8919,17 +8937,20 @@ function execHTML(FA,con){
   var corA=aprov>=90?'var(--gn)':(aprov>=70?'#c9a000':'var(--rd)');
   var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
   var verd=d.receita<=0?'informe receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE':(d.relacao>=d.alvo?'🟡 ATENÇÃO':'🟢 ADERENTE'));
-  function box(l,v,c,s){return '<div class="kp" style="border-top:3px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+';font-size:20px">'+v+'</div>'+(s?'<div class="ks">'+s+'</div>':'')+'</div>';}
+  function box(l,v,c,s,link){
+    var clk=link?(' onclick="'+link+'" style="border-top:3px solid '+c+';cursor:pointer" title="clique para ver o detalhamento e tratar"'):(' style="border-top:3px solid '+c+'"');
+    return '<div class="kp"'+clk+'><div class="kl">'+l+(link?' <span style="font-size:9px;color:var(--ca)">🔎</span>':'')+'</div><div class="kv" style="color:'+c+';font-size:20px">'+v+'</div>'+(s?'<div class="ks">'+s+(link?' · <span style="color:var(--ca);font-weight:700">ver ›</span>':'')+'</div>':'')+'</div>';
+  }
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
-    +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:6px">📊 VISÃO EXECUTIVA — '+((FA&&FA.titulo)||'período')+'</div>'
+    +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:6px">📊 VISÃO EXECUTIVA — '+((FA&&FA.titulo)||'período')+' <span style="font-size:8px;font-weight:400;color:var(--dm)">· clique nas caixas com 🔎 para ver quem é e tratar</span></div>'
     // EFETIVO
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">👥 EFETIVO</div>'
     +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:8px">'
     +box('Cadastrado',String(efetTotal),'var(--cs)','no efetivo')
     +box('Presentes',String(presentes),'var(--gn)','com apontamento')
-    +box('Faltantes',String(faltantes),faltantes>0?'var(--rd)':'var(--gn)','cadastro − presente')
-    +box('Atestado',String(nAtest),nAtest>0?'var(--co)':'var(--dm)','no período')
-    +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','não bate — não fatura')
+    +box('Faltantes',String(faltantes),faltantes>0?'var(--rd)':'var(--gn)','cadastro − presente',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +box('Atestado',String(nAtest),nAtest>0?'var(--co)':'var(--dm)','no período',"roboIrDetalhe('relatorios','analiseAtestado')")
+    +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','não bate — não fatura',"roboIrDetalhe('relatorios','analiseSemBatida')")
     +'</div>'
     // CAPACIDADE DE HORAS
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">⏱ CAPACIDADE DE HORAS — <span style="font-weight:400">capacidade/colab no mês: <input type="number" min="1" value="'+capH+'" onchange="roboSetParam(\'capHorasMes\',this.value)" style="width:52px;font-size:9px;padding:2px"> h</span></div>'
@@ -8943,10 +8964,10 @@ function execHTML(FA,con){
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:6px 0 4px">💵 HORAS A FATURAR & ADERÊNCIA</div>'
     +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px">'
     +box('HN — Normal',h2hm(T.hn),'var(--cs)','faturável')
-    +box('HE validada',h2hm(T.he50),'var(--gn)','reconhecida cliente')
-    +box('HE não recon.',h2hm(T.he50ap-T.he50),'var(--rd)','sem autorização')
-    +box('Custo / Receita',d.receita>0?d.relacao.toFixed(0)+'%':'—',cor,_brl(d.custo.total)+' / '+_brl(d.receita))
-    +box('Situação',verd.replace(/^[^ ]+ /,''),cor,'')
+    +box('HE validada',h2hm(T.he50),'var(--gn)','reconhecida cliente',"roboSub('deacordo')")
+    +box('HE não recon.',h2hm(T.he50ap-T.he50),'var(--rd)','autorizar no De Acordo',"roboSub('deacordo')")
+    +box('Custo / Receita',d.receita>0?d.relacao.toFixed(0)+'%':'—',cor,_brl(d.custo.total)+' / '+_brl(d.receita),"roboIrDetalhe('relatorios','analiseExcecao')")
+    +box('Situação',verd.replace(/^[^ ]+ /,''),cor,' ',"roboIrDetalhe('relatorios','analiseExcecao')")
     +'</div>'
     +'<div style="font-size:7px;color:var(--dm);margin-top:5px">Ajuste custo-hora e receita na sub-aba <b>Relatórios</b>. "Sem apontamento" e detalhamento de exceções também em Relatórios. Efetivo cadastrado vem do Cadastro de Efetivos ('+efetTotal+').</div>'
     +'</div>';
@@ -9360,8 +9381,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=83;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='83 · 04/08/2026 · sub-abas organizam toda a aba (base incluída)';
+var CBSI_VER=84;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='84 · 04/08/2026 · caixas da Visão Executiva clicáveis → detalhe';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
