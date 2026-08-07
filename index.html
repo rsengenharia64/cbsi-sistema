@@ -8832,8 +8832,18 @@ var SAL_MAT={"CBI9036":{f:"ALMOXARIFE I",s:4710.62},"CBJ4304":{f:"INSPETOR PINTU
 // ---- RECEITA da competência a partir do BM aprovado (parte de HH x total) ----
 // Lê o boletim consolidado do mês (cbsi-v15-bm-mesdata, chaveado por número do mês)
 // e separa a receita de MÃO DE OBRA (linhas un/tipo HH) do total (que inclui equipamentos/verbas).
+// classifica uma linha de HH do BM pela descrição no tier de hora (default = HN)
+function bmTierDe(desc){
+  var d=String(desc||'').toUpperCase();
+  if(/150/.test(d))return 'he150';
+  if(/100/.test(d))return 'he100';
+  if(/50/.test(d))return 'he50';
+  if(/NOTURN|ADIC/.test(d))return 'adn';
+  return 'hn'; // "Hora Normal" + funções administrativas/apoio faturadas como HH mensal
+}
 function bmReceitaComp(mes){
-  var out={hh:0,total:0,hhQtd:0,arquivo:'',ok:false};
+  var out={hh:0,total:0,hhQtd:0,arquivo:'',ok:false,
+    tiers:{hn:{q:0,v:0},he50:{q:0,v:0},he100:{q:0,v:0},he150:{q:0,v:0},adn:{q:0,v:0}}};
   try{
     var bm=JSON.parse(localStorage.getItem('cbsi-v15-bm-mesdata')||'{}');
     var m=bm[String(+mes)]||bm[String(mes)]; if(!m)return out;
@@ -8842,7 +8852,7 @@ function bmReceitaComp(mes){
       var un=String(r.un||r.u||'').toUpperCase(), tp=String(r.t||'').toUpperCase();
       var v=(+r.v!=null? +r.v : ((+r.pu||0)*(+r.q||+r.nm||0)))||0;
       var q=(+r.q!=null? +r.q : (+r.nm||0))||0;
-      if(un==='HH'||tp==='HH'){out.hh+=v; out.hhQtd+=q;}
+      if(un==='HH'||tp==='HH'){out.hh+=v; out.hhQtd+=q; var tk=bmTierDe(r.desc||r.d); out.tiers[tk].q+=q; out.tiers[tk].v+=v;}
     });
     out.ok=true;
   }catch(e){}
@@ -8879,10 +8889,16 @@ function analiseDados(FA){
   var JIN=(+P.heJin||7),tol=(+P.heTolMin||0)/60;
   function jout(dow){return normTxt(dow)==='SEX'?(+P.heJoutSex||16):(+P.heJoutSegQui||17)}
   function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
-  var T={hn:0,he50ap:0,he50:0,he100:0,he150:0,adn:0,dias:0,exAntes:0,exApos:0};
+  var T={hn:0,he50ap:0,he50:0,he100:0,he150:0,adn:0,dias:0,exAntes:0,exApos:0,
+    hnAp:0,he100ap:0,he150ap:0,adnAp:0};
   var byC={};
   regs.forEach(function(l){
     T.hn+=(+l.hn||0);T.he50ap+=(+l.he50ap||0);T.he50+=(+l.he50||0);T.he100+=(+l.he100||0);T.he150+=(+l.he150||0);T.adn+=(+l.adn||0);
+    // apurado (folha) = o que a pessoa efetivamente trabalhou; HN/HE100/HE150/ADN não têm De Acordo, então apurado=medido
+    T.hnAp+=((+l.hnAp!=null&&l.hnAp!=='')?+l.hnAp:(+l.hn||0));
+    T.he100ap+=((+l.he100ap!=null&&l.he100ap!=='')?+l.he100ap:(+l.he100||0));
+    T.he150ap+=((+l.he150ap!=null&&l.he150ap!=='')?+l.he150ap:(+l.he150||0));
+    T.adnAp+=((+l.adnAp!=null&&l.adnAp!=='')?+l.adnAp:(+l.adn||0));
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
     var c=byC[id]=byC[id]||{nome:l.nome||id,mat:l.mat||'',func:l.funcQQP||l.cargo||'',diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,atestado:0,falta:0,dias:0};
@@ -8918,7 +8934,7 @@ function analiseDados(FA){
   // realizado bruto (soma simples de horas apontadas que entram na conta) × esperado (HH faturado no BM)
   var realHoras=T.hn+T.he50+T.he100+T.he150+T.adn;
   return {T:T,byC:byC,custoHora:ch,custoModo:P.custoModo,custo:custo,receita:receita,receitaModo:P.receitaModo,
-    bmHH:bmR.hh,bmTotal:bmR.total,bmHHqtd:bmR.hhQtd,bmArquivo:bmR.arquivo,bmOk:bmR.ok,mesComp:mesComp,
+    bmHH:bmR.hh,bmTotal:bmR.total,bmHHqtd:bmR.hhQtd,bmArquivo:bmR.arquivo,bmOk:bmR.ok,bmTiers:bmR.tiers,mesComp:mesComp,
     alvo:alvo,relacao:relacao,horasCusto:horasCusto,realHoras:realHoras};
 }
 function analiseHTML(FA,con){
@@ -8989,6 +9005,46 @@ function analiseHTML(FA,con){
     +'</div>'
     +'<div style="font-size:7px;color:var(--dm);margin-top:4px">Custo = custo-hora × (HN·1 + HE50 <b>validada</b>·1,5 + HE100·2 + HE150·2,5) + ADN·20%. Custo-hora = salário médio × encargos ÷ base-horas. Receita = parte de HH da medição aprovada pelo cliente (BM). Vale para qualquer competência selecionada acima.</div>'
     +'</div>';
+  // ⚖️ ADERÊNCIA POR QUANTIDADE — o que DIRIGE os 62%: pagamos (folha/apurado) × cliente aprova (BM), por categoria
+  (function(){
+    var bt=d.bmTiers||{hn:{q:0,v:0},he50:{q:0,v:0},he100:{q:0,v:0},he150:{q:0,v:0},adn:{q:0,v:0}};
+    var ch=d.custoHora;
+    // linhas: [rótulo, horas pagamos (apurado folha), multiplicador custo, {q,v} cliente aprova (BM), obs]
+    var linhas=[
+      ['HN — Hora Normal', T.hnAp, 1, bt.hn, 'pagamos o trabalhado × cliente aprova no BM'],
+      ['HE 50%', T.he50ap, 1.5, bt.he50, 'pagamos a APURADA (trabalhada) × recebemos a VALIDADA (regra de ajustes do cliente / BM)'],
+      ['HE 100%', T.he100ap, 2, bt.he100, 'sábado'],
+      ['HE 150%', T.he150ap, 2.5, bt.he150, 'domingo/feriado'],
+      ['Ad. Noturno', T.adnAp, 0.2, bt.adn, '20%']
+    ];
+    var somaCusto=0,somaRec=0;
+    var body=linhas.map(function(r){
+      var pagQ=+r[1]||0, mult=r[2], aprovaQ=+(r[3]&&r[3].q)||0, recV=+(r[3]&&r[3].v)||0;
+      var custoV=ch*mult*pagQ; somaCusto+=custoV; somaRec+=recV;
+      var dQ=pagQ-aprovaQ, margem=recV-custoV;
+      var corDQ=(dQ>0.01)?'var(--rd)':(dQ<-0.01?'var(--gn)':'var(--dm)');
+      var corM=(margem>=0)?'var(--gn)':'var(--rd)';
+      return '<tr style="border-bottom:1px solid var(--bd)" title="'+r[4]+'">'
+        +'<td style="text-align:left;padding:3px;font-weight:700">'+r[0]+'</td>'
+        +'<td style="text-align:center">'+h2hm(pagQ)+'</td>'
+        +'<td style="text-align:right;color:var(--rd)">'+_brl(custoV)+'</td>'
+        +'<td style="text-align:center">'+h2hm(aprovaQ)+'</td>'
+        +'<td style="text-align:right;color:var(--gn)">'+_brl(recV)+'</td>'
+        +'<td style="text-align:center;font-weight:800;color:'+corDQ+'">'+(dQ>0?'+':'')+h2hm(dQ)+'</td>'
+        +'<td style="text-align:right;font-weight:800;color:'+corM+'">'+_brl(margem)+'</td></tr>';
+    }).join('');
+    var margemTot=somaRec-somaCusto;
+    h+='<div style="border:1px solid var(--ca);border-radius:6px;padding:8px;margin-bottom:6px">'
+      +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:2px">⚖️ ADERÊNCIA POR QUANTIDADE — o que dirige o índice</div>'
+      +'<div style="font-size:8px;color:var(--dm);margin-bottom:5px">Dois fatores: (1) <b>horas que PAGAMOS</b> (folha, apurado do ponto) × (2) <b>horas que o CLIENTE APROVA</b> (BM validado). O gap em horas vira gap financeiro. HE: pagamos a <b>apurada</b> (trabalhada), recebemos a <b>validada</b> pela regra de ajustes do cliente.</div>'
+      +'<div style="overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+      +'<tr style="background:var(--c1)"><th style="text-align:left;padding:3px">Categoria</th><th>Pagamos (h)<br><span style="font-weight:400;color:var(--dm)">folha apurada</span></th><th>Custo R$</th><th>Cliente aprova (h)<br><span style="font-weight:400;color:var(--dm)">BM validado</span></th><th>Receita R$</th><th>Δ horas<br><span style="font-weight:400;color:var(--dm)">pagamos−aprova</span></th><th>Margem R$</th></tr>'
+      +body
+      +'<tr style="background:var(--c1);font-weight:800"><td style="text-align:left;padding:3px">TOTAL</td><td style="text-align:center">'+h2hm(T.hnAp+T.he50ap+T.he100ap+T.he150ap+T.adnAp)+'</td><td style="text-align:right;color:var(--rd)">'+_brl(somaCusto)+'</td><td style="text-align:center">'+h2hm((bt.hn.q+bt.he50.q+bt.he100.q+bt.he150.q+bt.adn.q))+'</td><td style="text-align:right;color:var(--gn)">'+_brl(somaRec)+'</td><td style="text-align:center">—</td><td style="text-align:right;color:'+(margemTot>=0?'var(--gn)':'var(--rd)')+'">'+_brl(margemTot)+'</td></tr>'
+      +'</table></div>'
+      +'<div style="font-size:7px;color:var(--dm);margin-top:4px"><b style="color:var(--rd)">Δ horas positivo (vermelho)</b> = pagamos mais horas do que o cliente aprova → custo sem receita (exposição). <b style="color:var(--gn)">Negativo</b> = cliente aprova mais do que pagamos. A HE 50% apurada que não é validada (regra de tolerância / De Acordo) é o principal item a acompanhar. Custo pela média R$'+_brl(ch).replace('R$ ','')+'/h; receita pelos preços do BM.</div>'
+      +'</div>';
+  })();
   // TABELA MINUTOS DE EXCEÇÃO
   h+='<details open id="analiseExcecao"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🎯 Quem gera os minutos de exceção (fora da tolerância) — '+exList.length+' colaborador(es)</summary>'
     +'<div style="max-height:220px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
@@ -9559,8 +9615,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=89;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='89 · 07/08/2026 · Custo×Receita real: base salarial (méd×1,79÷184) + receita HH do BM aprovado + nota de rastreabilidade + custo por colaborador';
+var CBSI_VER=90;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='90 · 07/08/2026 · Aderência por quantidade: Pagamos (folha apurada) × Cliente aprova (BM) por categoria HN/HE + reflexo financeiro';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
