@@ -6378,18 +6378,22 @@ function calcDiaCliente(marcas,dow,dataStr){
         //     extra automático: caem na HE "a autorizar", que só é paga via De Acordo HE (nada automático).
         var JIN=(+P.heJin||7);
         var JOUT=(dN==='SEX')?(+P.heJoutSex||16):(+P.heJoutSegQui||17);
-        var dentro=ov(a,b,JIN,JOUT);                                   // sobreposição com a janela
-        var almo=(dentro>6||(a<12.25&&b>=12.5))?1:0;                   // 1h almoço se cruza a janela do almoço
-        r.hn=Math.min(Math.max(0,dentro-almo),j);
+        // HN = horas trabalhadas no dia (H, já sem 1h de almoço), LIMITADAS à jornada normal.
+        //   → Cumpriu/passou a jornada (H ≥ j) ⇒ HN = j (jornada cheia: 9h seg–qui / 8h sex).
+        //     Assim, batida antecipada (ex.: 06:52) COMPENSA saída poucos minutos antes (ex.: 16:57):
+        //     trabalhou 9,083h ⇒ HN = 9,000 (não "joga pra baixo de 9"). Validação do cliente (v7).
+        //   → Trabalhou menos que a jornada ⇒ HN = H (o real do dia).
+        r.hn=Math.min(H,j);
         // TOLERÂNCIA DA COMPANHIA (v6): até heTolMin (15 min) de cada lado NÃO gera custo de HE.
-        // Passou dos 15 min naquele lado → conta TODO o tempo fora da janela daquele lado como HE (a autorizar).
-        // Ex.: entra 06:45 (15 min) → 0 · entra 06:44/06:30 → conta os 16/30 min · sai 17:15 → 0 · sai 17:30 → 30 min.
+        // Passou dos 15 min naquele lado → tempo fora da janela daquele lado é HE (a autorizar),
+        // porém a HE NUNCA excede o que passou da jornada (H − j): sem dia acima de 9h, não há extra.
+        // Ex.: entra 06:45 (15 min) → 0 · entra 06:44/06:30 → 16/30 min · sai 17:15 → 0 · sai 17:30 → 30 min.
         var tol=(+P.heTolMin||0)/60;
         var antes=ov(a,b,0,JIN);                                       // tempo antes de 07:00
         var apos=ov(a,b,JOUT,48);                                      // tempo após 17:00/16:00
         var heAntes=(antes>tol+1e-9)?antes:0;
         var heApos=(apos>tol+1e-9)?apos:0;
-        r.he50=heAntes+heApos;
+        r.he50=Math.min(heAntes+heApos, Math.max(0,H-j));             // extra limitado ao excedente da jornada
       }else{
         // ---- MODELO LEGADO (planilha "PONTO AJUSTADO", H − jornada com tolerância de 15 min) ----
         // · HN = min(H, jornada normal)  → 9h seg–qui, 8h sex
@@ -6432,7 +6436,7 @@ window.roboRecalcular=function(silencioso){
   });
   aplicarDeAcordoHE();   // aplica autorização (HE 50% não paga sem De Acordo)
   roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v8|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0))}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v9|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0))}catch(e){}
   if(!silencioso){
     rtoast('🔁 '+n+' lançamentos recalculados pela regra '+(ROBO_PARAMS.calcRegra==='cliente'?'do CLIENTE (Ponto Ajustado)':'do RH (Conta/Valor)')+(semMk?(' · '+semMk+' antigos sem marcações — reprocesse os PDFs para incluí-los'):''));
     renderRobo();
@@ -6463,7 +6467,7 @@ window.heAuthParcial=function(key,h){
 window.heAuthSetPadrao=function(v){
   ROBO_PARAMS.heAuthPadrao=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);
   aplicarDeAcordoHE();roboSave();
-  try{lss('cbsi-v15-robo-calcver','planilha-v8|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0))}catch(e){}
+  try{lss('cbsi-v15-robo-calcver','planilha-v9|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0))}catch(e){}
   renderRobo();
 };
 // AÇÃO EM LOTE: reconhece / não reconhece todos os lançamentos com HE 50% do período em tela
@@ -8706,6 +8710,58 @@ window.driveAtualizarAgora=function(btn){
     if(b2){b2.disabled=false;b2.textContent='🔄 Atualizar agora'}
   });
 };
+// =====================================================================
+// ATUALIZAÇÃO COMPLETA DO SISTEMA (botão único / FAB)
+// Lê AGORA todas as pastas do Drive (Ponto, RDC, BMS, Pintura, Andaimes),
+// processa tudo que foi subido (ex.: pasta do mês recém-enviada) e recalcula
+// TODAS as telas — sem esperar o ciclo automático de 10 min.
+// =====================================================================
+var _sysRefreshBusy=false;
+window.sysRefreshAll=function(btn){
+  if(_sysRefreshBusy)return; _sysRefreshBusy=true;
+  var fab=document.getElementById('sysFab');
+  var setBusy=function(on){
+    [btn,fab].forEach(function(b){if(!b)return;b.disabled=on;});
+    if(fab)fab.innerHTML=on?'⏳ Atualizando…':'🔄 Atualizar<br>Sistema';
+    if(btn&&btn.id==='sysBtnBig')btn.textContent=on?'⏳ Atualizando o sistema…':'🔄 ATUALIZAÇÃO COMPLETA DO SISTEMA (Drive + todas as telas)';
+  };
+  setBusy(true);
+  try{rtoast('🔄 Atualização completa: lendo o Google Drive e recalculando todas as telas…')}catch(e){}
+  // força reimport imediato da Pintura (para refletir a planilha recém-subida na hora, sem depender da "marca")
+  try{if(DRIVE_CFG.status&&DRIVE_CFG.status.pintImport)DRIVE_CFG.status.pintImport.marca='';driveSave();}catch(e){}
+  Promise.resolve()
+  .then(function(){return driveMonitor()})                       // lê + processa novos arquivos de todas as pastas
+  .then(function(){return new Promise(function(res){setTimeout(res,1600)})}) // espera importações assíncronas (BM/Pintura)
+  .then(function(){
+    var q=new Date().toLocaleTimeString('pt-BR');
+    try{DRIVE_CFG.status.geral=q;driveSave();}catch(e){}
+    // recalcula TODAS as telas do sistema
+    ['R','renderBM','renderEfet','renderPonto','buildPintura','renderRDC','renderMapa'].forEach(function(fn){
+      try{if(typeof window[fn]==='function')window[fn]();}catch(e){console.warn('sysRefresh '+fn,e);}
+    });
+    try{var g=document.getElementById('drvMonGeral');if(g)g.textContent='✅ Atualização completa às '+q+' — Drive lido e todas as telas recalculadas.';}catch(e){}
+    try{rtoast('✅ Sistema atualizado ('+q+') — Drive lido e todas as telas recalculadas.')}catch(e){}
+  })
+  .catch(function(e){try{rtoast('❌ Atualização: '+(e&&e.message||e))}catch(_){}})
+  .finally(function(){ _sysRefreshBusy=false; setBusy(false); });
+};
+// botão flutuante sempre visível (após uploads, 1 clique atualiza tudo)
+(function sysFab(){
+  function mk(){
+    if(document.getElementById('sysFab')||!document.body)return;
+    var b=document.createElement('button');
+    b.id='sysFab';
+    b.title='Atualização completa: lê o Google Drive (pastas do mês recém-subidas) e recalcula todas as telas agora.';
+    b.innerHTML='🔄 Atualizar<br>Sistema';
+    b.onclick=function(){window.sysRefreshAll(b)};
+    b.style.cssText='position:fixed;right:16px;bottom:16px;z-index:99998;background:linear-gradient(135deg,var(--cs,#00adf9),var(--gn,#00c48c));color:#fff;border:none;border-radius:40px;padding:11px 15px;font-size:11px;font-weight:800;line-height:1.12;box-shadow:0 5px 16px rgba(0,0,0,.30);cursor:pointer;text-align:center;transition:transform .1s';
+    b.onmouseenter=function(){b.style.transform='translateY(-2px)'};
+    b.onmouseleave=function(){b.style.transform='none'};
+    document.body.appendChild(b);
+  }
+  if(document.body)mk();else document.addEventListener('DOMContentLoaded',mk);
+  setTimeout(mk,2500);
+})();
 function driveSync(chave){
   var fid=DRIVE_CFG.pastas[chave];
   var st=document.getElementById('drvSt-'+chave);
@@ -9097,6 +9153,8 @@ function renderRobo(){
   +'<div><div style="font-size:10px;font-weight:800;color:var(--ca);margin-bottom:4px">📂 ARQUIVOS PROCESSADOS ('+ROBO_ARQS.length+')</div>'
   +'<div style="max-height:150px;overflow:auto">'+(ROBO_ARQS.length?ROBO_ARQS.map(function(a){return '<div style="font-size:9px;padding:3px 0;border-bottom:1px solid var(--bd)">📄 <b>'+a.nome+'</b> · '+a.colabs+' colab · ref '+(a.ref||'—')+' · '+a.quando+'</div>'}).join(''):'<div style="font-size:9px;color:var(--dm)">Nenhum PDF processado ainda. Envie o Espelho de Ponto acima.</div>')+'</div>'
   +'<div style="font-size:10px;font-weight:800;color:var(--ca);margin:8px 0 4px">☁️ GOOGLE DRIVE — atualização automática (pastas oficiais já vinculadas)</div>'
+  +'<button id="sysBtnBig" onclick="sysRefreshAll(this)" style="width:100%;font-size:11px;font-weight:800;padding:9px 12px;margin-bottom:6px;background:linear-gradient(135deg,var(--cs),var(--gn));color:#fff;border:none;border-radius:7px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15)">🔄 ATUALIZAÇÃO COMPLETA DO SISTEMA (Drive + todas as telas)</button>'
+  +'<div style="font-size:8px;color:var(--dm);margin-bottom:6px">Use após subir uma pasta nova (ex.: JULHO/AGOSTO): lê na hora as 5 pastas do Drive, processa tudo que foi enviado e recalcula todas as telas — sem esperar o ciclo de '+(DRIVE_CFG.autoMin||10)+' min. O mesmo botão fica flutuando no canto inferior direito, acessível de qualquer aba.</div>'
   +'<div style="font-size:8px;color:var(--dm);margin-bottom:4px">As 5 pastas do Mapa da Rede CBSI já estão vinculadas (Ponto, RDC, BMS, Pintura, Andaimes). Para o sistema ler sozinho: compartilhe a pasta raiz como "qualquer pessoa com o link" e cole aqui a chave de API do Google. Verificação automática a cada '+(DRIVE_CFG.autoMin||10)+' min + botão manual. Sem isso, o upload manual acima continua valendo.</div>'
   +'<div style="display:flex;gap:4px;margin-bottom:4px"><input id="drvKey" placeholder="Chave de API do Google (AIza…)" value="'+(DRIVE_CFG.apiKey||'')+'" style="flex:1;font-size:9px;padding:4px" onchange="DRIVE_CFG.apiKey=this.value;driveSave();driveAutoStart()">'
   +'<button id="drvBtnAtu" onclick="driveAtualizarAgora(this)" style="font-size:9px;padding:4px 10px;background:var(--cs);color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">🔄 Atualizar agora</button></div>'
@@ -9275,7 +9333,7 @@ try{setTimeout(function(){try{if(typeof R==='function')R()}catch(e){}},1500)}cat
 // deste navegador, recalcula todos os lançamentos; se houver lançamentos antigos sem
 // marcações guardadas (processados por versão anterior), refaz do Drive sozinho.
 try{
-  var calcAssin='planilha-v8|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0);
+  var calcAssin='planilha-v9|'+ROBO_PARAMS.calcRegra+'|'+ROBO_PARAMS.heAuthPadrao+'|'+(ROBO_PARAMS.heAncora!==false?'anc':'leg')+'|t'+(+ROBO_PARAMS.heTolMin||0);
   if(lsg('cbsi-v15-robo-calcver','')!==calcAssin&&ROBO_LANC.length){
     var rc=window.roboRecalcular(true);
     lss('cbsi-v15-robo-calcver',calcAssin);
@@ -9381,8 +9439,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=85;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='85 · 07/08/2026 · Capacidade Produtiva por Disciplina em sub-aba própria';
+var CBSI_VER=87;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='87 · 07/08/2026 · HN arredonda p/ jornada cheia quando H≥9h (não joga abaixo de 9) + Atualização Completa + FAB';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
