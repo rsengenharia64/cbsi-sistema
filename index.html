@@ -6982,6 +6982,8 @@ window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
 window.roboSetCompMes=function(v){ROBO_UI.compMes=(v==='topo'?'topo':(+v||''));roboUISave();renderRobo()};
 window.roboSetCompAno=function(v){ROBO_UI.compAno=(+v||'');roboUISave();renderRobo()};
 window.roboSetAderBase=function(v){ROBO_UI.aderBase=v;roboUISave();renderRobo()};
+window.roboSetAderDia=function(v){ROBO_UI.aderDia=v||'';roboUISave();renderRobo()};
+window.roboSetAderSemana=function(v){ROBO_UI.aderSemana=(+v||'');roboUISave();renderRobo()};
 window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 window.roboSetParamStr=function(k,v){ROBO_PARAMS[k]=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 // Competência do BOLETIM DE MEDIÇÃO — o BM original era fixo em Jan/Fev (MED1/MED1A);
@@ -9295,11 +9297,29 @@ function execHTML(FA,con){
   if(duDecor>duTotal)duDecor=duTotal; if(duDecor<1&&_fimDecor)duDecor=1;
   var perDay=capH/Math.max(1,duTotal);                       // capacidade/colab por dia útil
   var aderBase=(ROBO_UI&&ROBO_UI.aderBase)||'decorrido';
+  // LISTAS para escolher DIA e SEMANA específicos (dentro do período de apuração, até hoje)
+  var _diasUnicos=(function(){var seen={},arr=[];regs.forEach(function(l){var dd=dataBR(l.data);if(dd&&!isNaN(dd)&&dd>=pIni&&dd<=pFim&&(!_maxReal||dd<=_maxReal)){var k=fmtD(dd);if(!seen[k]){seen[k]=1;arr.push({k:k,d:dd})}}});arr.sort(function(a,b){return a.d-b.d});return arr})();
+  var _semanas=(function(){var arr=[],fimW=(_maxReal&&_maxReal<pFim)?_maxReal:pFim,s=new Date(pIni.getFullYear(),pIni.getMonth(),pIni.getDate()),idx=0;while(s<=fimW&&idx<8){var e=new Date(s.getFullYear(),s.getMonth(),s.getDate()+6);if(e>pFim)e=new Date(pFim.getFullYear(),pFim.getMonth(),pFim.getDate());idx++;arr.push({i:idx,ini:new Date(s),fim:e});s=new Date(s.getFullYear(),s.getMonth(),s.getDate()+7)}return arr})();
   var registradoRef=registrado, capRef=capPres, aderLabel='', aderSub='';
   if(aderBase==='mes'){ registradoRef=registrado; capRef=presentes*capH; aderLabel='mês cheio'; aderSub='registrado ÷ (presentes × '+capH+'h)'; }
   else if(aderBase==='tendencia'){ var proj=duDecor>0?(registrado/duDecor*duTotal):registrado; registradoRef=proj; capRef=presentes*capH; aderLabel='tendência (fecha o mês)'; aderSub='projeção no ritmo atual × mês cheio'; }
-  else if(aderBase==='semana'){ var wIni=_maxReal?new Date(_maxReal.getFullYear(),_maxReal.getMonth(),_maxReal.getDate()-6):pIni; if(wIni<pIni)wIni=pIni; var jw=_janela(wIni,_maxReal||pFim); var duw=_du(wIni,_maxReal||wIni); registradoRef=jw.reg; capRef=(jw.pres||presentes)*perDay*Math.max(1,duw); aderLabel='última semana'; aderSub=(jw.pres||presentes)+' pres × '+duw+' dia(s) úteis'; }
-  else if(aderBase==='dia'){ var jd=_maxReal?_janela(_maxReal,_maxReal):{reg:0,pres:0}; registradoRef=jd.reg; capRef=(jd.pres||presentes)*perDay; aderLabel='último dia '+(_maxReal?fmtD(_maxReal):''); aderSub=(jd.pres||presentes)+' pres × '+(Math.round(perDay*10)/10)+'h/dia'; }
+  else if(aderBase==='semana'){
+    var wsel=+((ROBO_UI&&ROBO_UI.aderSemana)||0), wk=null;
+    if(wsel>=1)wk=_semanas.filter(function(w){return w.i===wsel})[0];
+    if(!wk)wk=_semanas.length?_semanas[_semanas.length-1]:null;
+    var wI=wk?wk.ini:pIni, wF=wk?wk.fim:(_maxReal||pFim);
+    var jw=_janela(wI,wF), duw=_du(wI,wF);
+    registradoRef=jw.reg; capRef=(jw.pres||presentes)*perDay*Math.max(1,duw);
+    aderLabel=wk?('semana '+wk.i+' ('+fmtD(wI)+'–'+fmtD(wF)+')'):'semana'; aderSub=(jw.pres||presentes)+' pres × '+duw+' dia(s) úteis';
+  }
+  else if(aderBase==='dia'){
+    var dk=(ROBO_UI&&ROBO_UI.aderDia)||'', dSel=null;
+    if(dk){var f=_diasUnicos.filter(function(x){return x.k===dk})[0];if(f)dSel=f.d;}
+    if(!dSel)dSel=_diasUnicos.length?_diasUnicos[_diasUnicos.length-1].d:_maxReal;
+    var jd=dSel?_janela(dSel,dSel):{reg:0,pres:0};
+    registradoRef=jd.reg; capRef=(jd.pres||presentes)*perDay;
+    aderLabel='dia '+(dSel?fmtD(dSel):'—'); aderSub=(jd.pres||presentes)+' pres × '+(Math.round(perDay*10)/10)+'h/dia';
+  }
   else { registradoRef=registrado; capRef=presentes*perDay*Math.max(1,duDecor); aderLabel='período decorrido'; aderSub=duDecor+' de '+duTotal+' dias úteis · presentes × '+(Math.round(perDay*10)/10)+'h/dia'; }
   // LÓGICA REALIZADO% / PREVISTO%: previsto = fração do mês que o recorte representa (ex.: 15 de 30 dias = 50%);
   // realizado = quanto do total do mês já foi registrado. Aderência = realizado ÷ previsto (100% = exatamente no ritmo).
@@ -9335,7 +9355,16 @@ function execHTML(FA,con){
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">⏱ CAPACIDADE DE HORAS — <span style="font-weight:400">capacidade/colab no mês: <input type="number" min="1" value="'+capH+'" onchange="roboSetParam(\'capHorasMes\',this.value)" style="width:52px;font-size:9px;padding:2px"> h</span>'
     +'<span style="margin-left:auto;font-weight:400">Aderência por: <select onchange="roboSetAderBase(this.value)" style="font-size:9px;font-weight:700">'
     +['dia|Dia','semana|Semana','decorrido|Mês (decorrido)','mes|Mês (cheio)','tendencia|Tendência'].map(function(o){var kv=o.split('|');return '<option value="'+kv[0]+'" '+(aderBase===kv[0]?'selected':'')+'>'+kv[1]+'</option>'}).join('')
-    +'</select></span></div>'
+    +'</select>'
+    // seletor secundário: qual DIA específico
+    +(aderBase==='dia'?(' <select onchange="roboSetAderDia(this.value)" style="font-size:9px;font-weight:700" title="escolha o dia">'
+        +(_diasUnicos.length?_diasUnicos.map(function(x){var sel=((ROBO_UI.aderDia||'')===x.k)||(!ROBO_UI.aderDia&&x===_diasUnicos[_diasUnicos.length-1]);return '<option value="'+x.k+'" '+(sel?'selected':'')+'>'+x.k.slice(0,5)+'</option>'}).join(''):'<option>—</option>')
+        +'</select>'):'')
+    // seletor secundário: qual SEMANA
+    +(aderBase==='semana'?(' <select onchange="roboSetAderSemana(this.value)" style="font-size:9px;font-weight:700" title="escolha a semana">'
+        +(_semanas.length?_semanas.map(function(w){var sel=(+(ROBO_UI.aderSemana||0)===w.i)||(!ROBO_UI.aderSemana&&w===_semanas[_semanas.length-1]);return '<option value="'+w.i+'" '+(sel?'selected':'')+'>Sem '+w.i+' ('+fmtD(w.ini).slice(0,5)+'–'+fmtD(w.fim).slice(0,5)+')</option>'}).join(''):'<option>—</option>')
+        +'</select>'):'')
+    +'</span></div>'
     +'<div class="g g" style="grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:4px">'
     +box('Previsto até aqui',_pc(esperadoPct)+'%','var(--cs)',duDecor+' de '+duTotal+' dias úteis · '+aderLabel)
     +box('Realizado',_pc(realizadoPct)+'%','var(--gn)',h2hm(registradoRef)+' de '+h2hm(capMes))
@@ -9784,8 +9813,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=98;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='98 · 07/08/2026 · Produtividade real (m²/pessoa-dia) do ponto abaixo do gráfico Capacidade×Demanda×Realizado — Julho 4,41 m²/p-dia (63% da meta), só meses com ponto completo';
+var CBSI_VER=99;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='99 · 07/08/2026 · Aderência: escolher DIA específico (18, 19…) e SEMANA (1,2,3,4) do período, não só o último';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
