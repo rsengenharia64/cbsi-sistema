@@ -9213,18 +9213,25 @@ function execHTML(FA,con){
   var _datas=regs.map(function(l){return dataBR(l.data)}).filter(function(x){return x&&!isNaN(x)});
   var _maxD=_datas.length?new Date(Math.max.apply(null,_datas.map(function(x){return x.getTime()}))):null;
   var _minD=_datas.length?new Date(Math.min.apply(null,_datas.map(function(x){return x.getTime()}))):null;
-  var pIni,pFim;
-  if(FA&&FA.compMesEff){var _pp=periodoDaCompetencia(FA.compMesEff,FA.compAnoEff||(new Date()).getFullYear());pIni=_pp.ini;pFim=_pp.fim;}
-  else{pIni=_minD;pFim=_maxD;}
-  var duTotal=_du(pIni,pFim), duDecor=_du(pIni,_maxD||pIni);
-  if(duDecor>duTotal)duDecor=duTotal; if(duDecor<1&&_maxD)duDecor=1;
+  var _hoje=new Date(); _hoje=new Date(_hoje.getFullYear(),_hoje.getMonth(),_hoje.getDate());
+  var pIni,pFim,_fimDecor;
+  if(FA&&FA.compMesEff){
+    var _pp=periodoDaCompetencia(FA.compMesEff,FA.compAnoEff||_hoje.getFullYear());pIni=_pp.ini;pFim=_pp.fim;
+    // DIAS DECORRIDOS = dias úteis já passados até HOJE, dentro da janela de apuração 21→20.
+    // NÃO usa a última data do espelho (ciclo 16→15 traz dias FUTUROS que ainda não ocorreram — era a distorção).
+    _fimDecor=(_hoje<pFim?_hoje:pFim); if(_fimDecor<pIni)_fimDecor=pIni;
+  } else { pIni=_minD;pFim=_maxD;_fimDecor=_maxD; }
+  // para recortes "dia/semana": último dia com dado que NÃO seja futuro (não passa de hoje)
+  var _maxReal=(_maxD&&_maxD>_hoje)?_hoje:_maxD;
+  var duTotal=_du(pIni,pFim), duDecor=_du(pIni,_fimDecor||pIni);
+  if(duDecor>duTotal)duDecor=duTotal; if(duDecor<1&&_fimDecor)duDecor=1;
   var perDay=capH/Math.max(1,duTotal);                       // capacidade/colab por dia útil
   var aderBase=(ROBO_UI&&ROBO_UI.aderBase)||'decorrido';
   var registradoRef=registrado, capRef=capPres, aderLabel='', aderSub='';
   if(aderBase==='mes'){ registradoRef=registrado; capRef=presentes*capH; aderLabel='mês cheio'; aderSub='registrado ÷ (presentes × '+capH+'h)'; }
   else if(aderBase==='tendencia'){ var proj=duDecor>0?(registrado/duDecor*duTotal):registrado; registradoRef=proj; capRef=presentes*capH; aderLabel='tendência (fecha o mês)'; aderSub='projeção no ritmo atual × mês cheio'; }
-  else if(aderBase==='semana'){ var wIni=_maxD?new Date(_maxD.getFullYear(),_maxD.getMonth(),_maxD.getDate()-6):pIni; if(wIni<pIni)wIni=pIni; var jw=_janela(wIni,_maxD||pFim); var duw=_du(wIni,_maxD||wIni); registradoRef=jw.reg; capRef=(jw.pres||presentes)*perDay*Math.max(1,duw); aderLabel='última semana'; aderSub=(jw.pres||presentes)+' pres × '+duw+' dia(s) úteis'; }
-  else if(aderBase==='dia'){ var jd=_maxD?_janela(_maxD,_maxD):{reg:0,pres:0}; registradoRef=jd.reg; capRef=(jd.pres||presentes)*perDay; aderLabel='último dia '+(_maxD?fmtD(_maxD):''); aderSub=(jd.pres||presentes)+' pres × '+(Math.round(perDay*10)/10)+'h/dia'; }
+  else if(aderBase==='semana'){ var wIni=_maxReal?new Date(_maxReal.getFullYear(),_maxReal.getMonth(),_maxReal.getDate()-6):pIni; if(wIni<pIni)wIni=pIni; var jw=_janela(wIni,_maxReal||pFim); var duw=_du(wIni,_maxReal||wIni); registradoRef=jw.reg; capRef=(jw.pres||presentes)*perDay*Math.max(1,duw); aderLabel='última semana'; aderSub=(jw.pres||presentes)+' pres × '+duw+' dia(s) úteis'; }
+  else if(aderBase==='dia'){ var jd=_maxReal?_janela(_maxReal,_maxReal):{reg:0,pres:0}; registradoRef=jd.reg; capRef=(jd.pres||presentes)*perDay; aderLabel='último dia '+(_maxReal?fmtD(_maxReal):''); aderSub=(jd.pres||presentes)+' pres × '+(Math.round(perDay*10)/10)+'h/dia'; }
   else { registradoRef=registrado; capRef=presentes*perDay*Math.max(1,duDecor); aderLabel='período decorrido'; aderSub=duDecor+' de '+duTotal+' dias úteis · presentes × '+(Math.round(perDay*10)/10)+'h/dia'; }
   // LÓGICA REALIZADO% / PREVISTO%: previsto = fração do mês que o recorte representa (ex.: 15 de 30 dias = 50%);
   // realizado = quanto do total do mês já foi registrado. Aderência = realizado ÷ previsto (100% = exatamente no ritmo).
@@ -9705,8 +9712,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=94;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='94 · 07/08/2026 · Aderência no formato realizado%/previsto% (ex.: 48,5% / 50%): previsto = fração do mês decorrida, realizado = % do total; lupa p/ o motivo';
+var CBSI_VER=95;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='95 · 07/08/2026 · Correção dias decorridos: conta até HOJE dentro da janela 21→20 (antes usava a última data do espelho 16→15, que traz dias futuros e inflava o previsto de 60,9% p/ 82,6%)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
