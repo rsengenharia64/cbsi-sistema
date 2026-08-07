@@ -6519,6 +6519,24 @@ window.heAuthAplicar=function(){
 var PT_SEL='',PT_FILTER='';
 window.ptFiltro=function(v){PT_FILTER=v||'';var t=document.getElementById('ptAudBox');if(t){t.innerHTML=auditoriaInner(window.FA||roboFiltroAtivo())}};
 window.ptSel=function(id){PT_SEL=(PT_SEL===id?'':id);var t=document.getElementById('ptAudBox');if(t){t.innerHTML=auditoriaInner(window.FA||roboFiltroAtivo())}};
+// DRILL "detalhe do detalhe": de qualquer lista (exceção, sem batida, atestado, por colaborador)
+// vai direto ao ESPELHO DE PONTO DIA A DIA do colaborador (aba Auditoria), a fonte do número.
+window.roboVerColab=function(id,mat){
+  id=(id==null?'':String(id));
+  PT_SEL=id;                                   // expande o detalhe diário desse colaborador
+  var chave=String(mat||id||'');               // filtra a lista para ele (matrícula única, ou nome/id)
+  PT_FILTER=chave;
+  var t=document.getElementById('ptAudBox');
+  if(t){t.innerHTML=auditoriaInner(window.FA||roboFiltroAtivo())}
+  var fi=document.getElementById('ptFiltroInp'); if(fi)fi.value=chave;
+  if(typeof roboSub==='function')roboSub('auditoria');
+  setTimeout(function(){
+    var box=document.getElementById('ptAudBox');
+    if(box){try{box.scrollIntoView({behavior:'smooth',block:'start'})}catch(e){box.scrollIntoView()}
+      box.style.transition='outline .3s';box.style.outline='2px solid var(--ca)';box.style.outlineOffset='2px';
+      setTimeout(function(){box.style.outline='none'},1900);}
+  },100);
+};
 // edição das HORAS medidas de um dia (tipo = hn|he50|he100|he150|adn)
 window.ptEditHora=function(key,tipo,valor,nota){
   PT_EDIT[key]=PT_EDIT[key]||{};
@@ -8902,7 +8920,7 @@ function analiseDados(FA){
     T.adnAp+=((+l.adnAp!=null&&l.adnAp!=='')?+l.adnAp:(+l.adn||0));
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
-    var c=byC[id]=byC[id]||{nome:l.nome||id,mat:l.mat||'',func:l.funcQQP||l.cargo||'',diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,atestado:0,falta:0,dias:0};
+    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',func:l.funcQQP||l.cargo||'',diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,atestado:0,falta:0,dias:0};
     c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
     var _o=String((l.obs||'')+' '+(l.phtd||''));
     if(/ATESTADO/i.test(_o))c.atestado++;else if(/FALTA|AUSENC/i.test(_o))c.falta++;
@@ -8947,6 +8965,9 @@ function analiseHTML(FA,con){
   var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
   var verd=d.receita<=0?'informe a receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE — custo ≥ receita':(d.relacao>=d.alvo?'🟡 ATENÇÃO — acima do alvo':'🟢 ADERENTE'));
   function kp(l,v,c,s){return '<div class="kp" style="border-top:2px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+'">'+v+'</div>'+(s?'<div class="ks">'+s+'</div>':'')+'</div>';}
+  function _escC(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
+  // célula de nome clicável → leva ao espelho de ponto dia a dia do colaborador (fonte do dado)
+  function _nomeLink(c){return '<td style="text-align:left;padding:3px;font-weight:700;cursor:pointer;color:var(--ca)" onclick="roboVerColab(\''+_escC(c.id)+'\',\''+_escC(c.mat)+'\')" title="🔎 ver o espelho de ponto DIA A DIA deste colaborador — de onde veio o número">🔎 '+(c.nome||'—')+'</td>';}
   var h='<div class="cd" style="border:2px solid var(--ca);position:relative;margin-bottom:8px">'
     +'<button class="fs-btn" onclick="toggleFullscreen(this)"></button>'
     +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:4px">'
@@ -9050,19 +9071,19 @@ function analiseHTML(FA,con){
   h+='<details open id="analiseExcecao"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🎯 Quem gera os minutos de exceção (fora da tolerância) — '+exList.length+' colaborador(es)</summary>'
     +'<div style="max-height:220px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
     +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Função</th><th>Dias c/ exceção</th><th>Min. antes 07:00</th><th>Min. após 17:00</th><th>Total exceção</th><th>HE apur.</th><th>HE validada</th></tr>'
-    +(exList.length?exList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center">'+c.diasExc+'</td><td style="text-align:center">'+h2hm(c.minAntes)+'</td><td style="text-align:center">'+h2hm(c.minApos)+'</td><td style="text-align:center;font-weight:800;color:var(--ca)">'+h2hm(c.minAntes+c.minApos)+'</td><td style="text-align:center">'+h2hm(c.he50ap)+'</td><td style="text-align:center;color:var(--gn);font-weight:700">'+h2hm(c.he50)+'</td></tr>'}).join(''):'<tr><td colspan="8" style="text-align:center;padding:8px;color:var(--dm)">Nenhuma batida fora da tolerância no período.</td></tr>')
+    +(exList.length?exList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center">'+c.diasExc+'</td><td style="text-align:center">'+h2hm(c.minAntes)+'</td><td style="text-align:center">'+h2hm(c.minApos)+'</td><td style="text-align:center;font-weight:800;color:var(--ca)">'+h2hm(c.minAntes+c.minApos)+'</td><td style="text-align:center">'+h2hm(c.he50ap)+'</td><td style="text-align:center;color:var(--gn);font-weight:700">'+h2hm(c.he50)+'</td></tr>'}).join(''):'<tr><td colspan="8" style="text-align:center;padding:8px;color:var(--dm)">Nenhuma batida fora da tolerância no período.</td></tr>')
     +'</table></div></details>';
   // SEM BATIDA (perdidos na área) — sempre renderiza (id fixo p/ o link da Visão Executiva)
   h+='<details style="margin-top:4px"'+(sbList.length?' open':'')+' id="analiseSemBatida"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--rd)">⚠️ Colaboradores com dias sem batida em dia útil (sem apontamento → não fatura) — '+sbList.length+'</summary>'
     +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
     +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Dias sem batida</th></tr>'
-    +(sbList.length?sbList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td></tr>'}).join(''):'<tr><td colspan="4" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum colaborador sem apontamento no período.</td></tr>')
+    +(sbList.length?sbList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td></tr>'}).join(''):'<tr><td colspan="4" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum colaborador sem apontamento no período.</td></tr>')
     +'</table></div></details>';
   // ATESTADO / FALTA por colaborador (id fixo p/ o link da Visão Executiva)
   h+='<details style="margin-top:4px" id="analiseAtestado"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--co)">🩺 Colaboradores com atestado / falta — '+atList.length+'</summary>'
     +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
     +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Atestado</th><th>Falta/Ausência</th></tr>'
-    +(atList.length?atList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left;padding:3px;font-weight:700">'+c.nome+'</td><td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;color:var(--co);font-weight:700">'+(c.atestado||0)+'</td><td style="text-align:center;color:var(--rd);font-weight:700">'+(c.falta||0)+'</td></tr>'}).join(''):'<tr><td colspan="5" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum atestado/falta no período.</td></tr>')
+    +(atList.length?atList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;color:var(--co);font-weight:700">'+(c.atestado||0)+'</td><td style="text-align:center;color:var(--rd);font-weight:700">'+(c.falta||0)+'</td></tr>'}).join(''):'<tr><td colspan="5" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum atestado/falta no período.</td></tr>')
     +'</table></div></details>';
   h+='</div>';
   return h;
@@ -9344,7 +9365,8 @@ function renderRobo(){
   +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Nome</th><th style="text-align:left">Matr.</th><th>Dias</th><th>HN</th><th>50%</th><th>100%</th><th>150%</th><th>ADN</th><th title="custo-hora individual (salário da matrícula/função × encargos ÷ base-horas) × horas ponderadas validadas">Custo R$</th></tr>'
   +(function(){var somaC=0;var linhas=Object.values(con.porColab).sort(function(a,b){return a.nome<b.nome?-1:1}).map(function(c){
      var cc=custoColab(c);somaC+=cc.custo;
-     return '<tr style="border-bottom:1px solid var(--bd)"><td style="padding:3px;text-align:left" title="'+c.cargo+' → '+c.funcQQP+' · custo-hora '+_brl(cc.ch)+' ('+cc.fonte+')">'+c.nome+'</td><td style="text-align:left">'+(c.mat||c.id)+'</td><td style="text-align:center">'+c.dias+'</td><td style="text-align:right">'+n2(c.hn)+'</td><td style="text-align:right">'+n2(c.he50)+'</td><td style="text-align:right">'+n2(c.he100)+'</td><td style="text-align:right">'+n2(c.he150)+'</td><td style="text-align:right">'+n2(c.adn)+'</td><td style="text-align:right;font-weight:700;color:var(--rd)">'+_brl(cc.custo)+'</td></tr>'}).join('');
+     var _cid=String(c.id==null?'':c.id).replace(/'/g,"\\'"),_cmt=String(c.mat==null?'':c.mat).replace(/'/g,"\\'");
+     return '<tr style="border-bottom:1px solid var(--bd)"><td style="padding:3px;text-align:left;cursor:pointer;color:var(--ca)" onclick="roboVerColab(\''+_cid+'\',\''+_cmt+'\')" title="🔎 '+c.cargo+' → '+c.funcQQP+' · custo-hora '+_brl(cc.ch)+' ('+cc.fonte+') · clique para ver o espelho dia a dia">🔎 '+c.nome+'</td><td style="text-align:left">'+(c.mat||c.id)+'</td><td style="text-align:center">'+c.dias+'</td><td style="text-align:right">'+n2(c.hn)+'</td><td style="text-align:right">'+n2(c.he50)+'</td><td style="text-align:right">'+n2(c.he100)+'</td><td style="text-align:right">'+n2(c.he150)+'</td><td style="text-align:right">'+n2(c.adn)+'</td><td style="text-align:right;font-weight:700;color:var(--rd)">'+_brl(cc.custo)+'</td></tr>'}).join('');
      return linhas+'<tr style="background:var(--c1);font-weight:800"><td style="padding:3px;text-align:left" colspan="8">TOTAL custo do período</td><td style="text-align:right;color:var(--rd)">'+_brl(somaC)+'</td></tr>';})()
   +'</table></div></div></div>'
   +'</div>'   /* fim relatorios (parte 2) */
@@ -9646,8 +9668,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=91;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='91 · 07/08/2026 · Aproveitamento proporcional ao período decorrido + filtro dia/semana/mês/tendência + projeção fim do mês';
+var CBSI_VER=92;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='92 · 07/08/2026 · Drill "detalhe do detalhe": clicar no colaborador (exceção/sem batida/atestado/custo) leva ao espelho de ponto dia a dia (fonte)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
