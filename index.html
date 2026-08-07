@@ -8921,7 +8921,7 @@ function analiseDados(FA){
   function jout(dow){return normTxt(dow)==='SEX'?(+P.heJoutSex||16):(+P.heJoutSegQui||17)}
   function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
   var T={hn:0,he50ap:0,he50:0,he100:0,he150:0,adn:0,dias:0,exAntes:0,exApos:0,
-    hnAp:0,he100ap:0,he150ap:0,adnAp:0};
+    hnAp:0,he100ap:0,he150ap:0,adnAp:0,tolAntes:0,tolApos:0,diasTol:0};
   var byC={};
   regs.forEach(function(l){
     T.hn+=(+l.hn||0);T.he50ap+=(+l.he50ap||0);T.he50+=(+l.he50||0);T.he100+=(+l.he100||0);T.he150+=(+l.he150||0);T.adn+=(+l.adn||0);
@@ -8932,7 +8932,7 @@ function analiseDados(FA){
     T.adnAp+=((+l.adnAp!=null&&l.adnAp!=='')?+l.adnAp:(+l.adn||0));
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
-    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,manualPend:0,atestado:0,falta:0,dias:0};
+    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,manualPend:0,atestado:0,falta:0,dias:0,tolAntes:0,tolApos:0,diasTol:0};
     c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
     var _o=String((l.obs||'')+' '+(l.phtd||''));
     if(/ATESTADO/i.test(_o))c.atestado++;else if(/FALTA|AUSENC/i.test(_o))c.falta++;
@@ -8945,6 +8945,10 @@ function analiseDados(FA){
         var antes=ov(a,b,0,JIN),apos=ov(a,b,JOUT,48);
         var eAntes=(antes>tol+1e-9)?antes:0,eApos=(apos>tol+1e-9)?apos:0;
         if(eAntes>0||eApos>0){c.diasExc++;c.minAntes+=eAntes;c.minApos+=eApos;T.exAntes+=eAntes;T.exApos+=eApos;}
+        // ABSORVIDO PELA TOLERÂNCIA DE 15 MIN (batida 06:45–07:00 de manhã / 17:00–17:15 à tarde):
+        // trabalhado mas NÃO vira HE (regra dos 15 min). Bucket separado da HE apurada/não reconhecida.
+        var tA=(antes>1e-9&&antes<=tol+1e-9)?antes:0, tP=(apos>1e-9&&apos<=tol+1e-9)?apos:0;
+        if(tA>0||tP>0){c.tolAntes+=tA;c.tolApos+=tP;c.diasTol++;T.tolAntes+=tA;T.tolApos+=tP;T.diasTol++;}
       }
     }else if((+l.trab||0)===0 && ['SEG','TER','QUA','QUI','SEX'].indexOf(dN)>=0 && !/DOM|SAB|F[ÉE]RIAS|FERIAS|DSR|FOLGA|ATESTADO|FALTA|LICEN|AFASTAD|COMP/i.test(String((l.obs||'')+' '+(l.phtd||'')))){
       // cargo de confiança (supervisor/coordenador/gerente/eng. segurança) NÃO bate ponto:
@@ -8993,21 +8997,25 @@ function analiseHTML(FA,con){
   h+='<div style="font-size:8px;color:var(--dm);background:rgba(0,173,249,.05);border-radius:5px;padding:6px 8px;margin-bottom:6px;line-height:1.6">'
     +'⏱ <b>Premissa da companhia (HE):</b> jornada 07:00–17:00 (sex 07:00–16:00). <b>Tolerância de '+(+P.heTolMin||0)+' min por lado</b>: batida até '+(+P.heTolMin||0)+' min antes das 07:00 ou até '+(+P.heTolMin||0)+' min após 17:00/16:00 <u>não gera custo de HE</u>. Passou disso, conta todo o tempo fora da jornada como HE 50% <b>a autorizar</b> (só paga/fatura via De Acordo HE). Sáb = 100% · Dom/feriado = 150%.'
     +'</div>';
+  var tolTot=T.tolAntes+T.tolApos, tolList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.tolAntes+c.tolApos)>0.001}).sort(function(x,y){return (y.tolAntes+y.tolApos)-(x.tolAntes+x.tolApos)});
+  var jinTxt=(String((+P.heJin||7)).length<2?'0':'')+(+P.heJin||7)+':00';
+  var tolMin=(+P.heTolMin||0);
   // RESUMO (bate o olho)
-  h+='<div class="g g" style="grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:6px">'
+  h+='<div class="g g" style="grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px">'
     +kp('Colaboradores',String(Object.keys(d.byC).length),'var(--cs)',T.dias+' dias trab.')
     +kp('HN — Normal',h2hm(T.hn),'var(--cs)','faturável')
-    +kp('HE 50% apurada',h2hm(T.he50ap),'var(--co)','com tolerância')
+    +kp('Tolerância '+tolMin+'min',h2hm(tolTot),'#c9a000','06:45-07:00 + 17:00-17:15')
+    +kp('HE 50% apurada',h2hm(T.he50ap),'var(--co)','acima da tolerância')
     +kp('HE 50% validada',h2hm(T.he50),'var(--gn)','a faturar')
     +kp('HE 50% não recon.',h2hm(cortada),'var(--rd)','sem autorização')
     +kp('Minutos exceção',h2hm(T.exAntes+T.exApos),'var(--ca)',exList.length+' colab.')
     +'</div>';
-  // NOTA DE RASTREABILIDADE — o que vira custo e o que NÃO vira (para gerência/diretoria)
+  // NOTA DE RASTREABILIDADE — três buckets separados (para gerência/diretoria)
   h+='<div style="font-size:8px;background:rgba(0,196,140,.07);border:1px solid rgba(0,196,140,.3);border-radius:5px;padding:6px 8px;margin-bottom:6px;line-height:1.6">'
-    +'🧭 <b>Rastreabilidade custo × recebível (o que entra na conta):</b> só viram <u>custo</u> as horas que também são <u>recebíveis</u> — <b>HN</b> + <b>HE 50% VALIDADA</b> (reconhecida no De Acordo) + HE 100% + HE 150%. '
-    +'A <b>HE 50% apurada de '+h2hm(T.he50ap)+'</b> teve <b style="color:var(--gn)">'+h2hm(T.he50)+' reconhecida</b> e <b style="color:var(--rd)">'+h2hm(cortada)+' NÃO reconhecida</b>. '
-    +'Essas '+h2hm(cortada)+' vêm da <b>regra de tolerância</b> (batida até '+(+P.heTolMin||0)+' min antes das 07:00 / até '+(+P.heTolMin||0)+' min após 17:00-16:00, e dias sem De Acordo): '
-    +'<b>o ponto é registrado, mas NÃO gera custo nem recebível</b>. Rastreado, apontado, e corretamente fora da conta.'
+    +'🧭 <b>Rastreabilidade das horas fora da jornada (três grupos, sem sobreposição):</b><br>'
+    +'① <b style="color:#c9a000">Tolerância de '+tolMin+' min = '+h2hm(tolTot)+'</b> (manhã 06:45-07:00: '+h2hm(T.tolAntes)+' · tarde 17:00-17:15: '+h2hm(T.tolApos)+' · '+tolList.length+' colab.): batida dentro dos '+tolMin+' min — <u>trabalhada, mas NÃO vira HE</u> pela regra da companhia. Nunca entra em custo nem recebível.<br>'
+    +'② <b style="color:var(--co)">HE 50% apurada = '+h2hm(T.he50ap)+'</b> (acima dos '+tolMin+' min): dessa, <b style="color:var(--gn)">'+h2hm(T.he50)+' validada</b> (reconhecida no De Acordo → paga/faturada) e <b style="color:var(--rd)">'+h2hm(cortada)+' não reconhecida</b> (sem autorização do cliente).<br>'
+    +'③ Só viram <u>custo × recebível</u>: HN + HE 50% <b>validada</b> + HE 100% + HE 150%. As '+h2hm(tolTot)+' da tolerância e as '+h2hm(cortada)+' não reconhecidas ficam <b>rastreadas e fora da conta</b>.'
     +'</div>';
   // CUSTO × RECEITA
   var margem=d.receita-d.custo.total;
@@ -9088,6 +9096,14 @@ function analiseHTML(FA,con){
     +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Função</th><th>Dias c/ exceção</th><th>Min. antes 07:00</th><th>Min. após 17:00</th><th>Total exceção</th><th>HE apur.</th><th>HE validada</th></tr>'
     +(exList.length?exList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center">'+c.diasExc+'</td><td style="text-align:center">'+h2hm(c.minAntes)+'</td><td style="text-align:center">'+h2hm(c.minApos)+'</td><td style="text-align:center;font-weight:800;color:var(--ca)">'+h2hm(c.minAntes+c.minApos)+'</td><td style="text-align:center">'+h2hm(c.he50ap)+'</td><td style="text-align:center;color:var(--gn);font-weight:700">'+h2hm(c.he50)+'</td></tr>'}).join(''):'<tr><td colspan="8" style="text-align:center;padding:8px;color:var(--dm)">Nenhuma batida fora da tolerância no período.</td></tr>')
     +'</table></div></details>';
+  // TOLERÂNCIA 15 MIN ABSORVIDA (trabalhada mas não vira HE) — separação pedida pelo gestor
+  h+='<details style="margin-top:4px" id="analiseTolerancia"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:#c9a000">⏱ Horas absorvidas pela tolerância de '+tolMin+' min (06:45-07:00 e 17:00-17:15 — trabalhadas, não viram HE) — total '+h2hm(tolTot)+' · '+tolList.length+' colaborador(es)</summary>'
+    +'<div style="max-height:220px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Função</th><th>Dias</th><th>Manhã (06:45-07:00)</th><th>Tarde (17:00-17:15)</th><th>Total absorvido</th></tr>'
+    +(tolList.length?tolList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center">'+c.diasTol+'</td><td style="text-align:center">'+h2hm(c.tolAntes)+'</td><td style="text-align:center">'+h2hm(c.tolApos)+'</td><td style="text-align:center;font-weight:800;color:#c9a000">'+h2hm(c.tolAntes+c.tolApos)+'</td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;padding:8px;color:var(--dm)">Nenhuma batida dentro da tolerância no período.</td></tr>')
+    +'<tr style="background:var(--c1);font-weight:800"><td style="text-align:left;padding:3px" colspan="3">TOTAL</td><td style="text-align:center">'+h2hm(T.tolAntes)+'</td><td style="text-align:center">'+h2hm(T.tolApos)+'</td><td style="text-align:center;color:#c9a000">'+h2hm(tolTot)+'</td></tr>'
+    +'</table></div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-top:3px">Essas horas foram <b>trabalhadas</b> mas, pela regra dos '+tolMin+' min por lado, <b>não geram HE</b> — logo não entram em custo nem recebível. É um bucket <b>separado</b> da HE não reconhecida ('+h2hm(cortada)+'), que é apurada acima da tolerância e não autorizada no De Acordo.</div></details>';
   // SEM BATIDA (perdidos na área) — sempre renderiza (id fixo p/ o link da Visão Executiva)
   h+='<details style="margin-top:4px"'+(sbList.length?' open':'')+' id="analiseSemBatida"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--rd)">⚠️ Colaboradores com dias sem batida em dia útil (sem apontamento → não fatura) — '+sbList.length+'</summary>'
     +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
@@ -9719,8 +9735,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=96;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='96 · 07/08/2026 · Oculta painel MÉTRICAS DA JORNADA ATIVA (horas divergentes) + KPI HE 50% deixa explícito apurada → validada (a pagar)';
+var CBSI_VER=97;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='97 · 07/08/2026 · Separa a TOLERÂNCIA de 15 min (06:45-07:00 e 17:00-17:15 = trabalhada mas não vira HE) do resto: KPI + nota 3 grupos + tabela por colaborador';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
