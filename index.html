@@ -6738,7 +6738,7 @@ function roboFiltroAtivo(){
     var regsU=ROBO_LANC.filter(function(l){var d=dataBR(l.data);return d>=P1.ini&&d<=P1.fim});
     return{modo:modo,compMesEff:_cm,compAnoEff:_cy,regs:regsU,
       rotulo:MESES_NOMES[_cm]+'-'+_cy,
-      titulo:'Competência '+MESES_NOMES[_cm]+'/'+_cy+' — apuração '+P1.desc+' · NF em '+P1.nf+' · mês único (a parte do mês anterior entra automaticamente)',
+      titulo:'Competência '+MESES_NOMES[_cm]+'/'+_cy+' — apuração '+P1.desc,
       periodos:[{comp:MESES_NOMES[_cm]+'/'+_cy,desc:P1.desc,nf:P1.nf}]};
   }
   // --- legado 'topo': competência(s) a partir do filtro global de meses (2 meses = 1 janela) ---
@@ -9852,8 +9852,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=102;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='102 · 07/08/2026 · Caixinha EM MOBILIZAÇÃO no painel executivo: detecta Treinamento/Aguardando Crachá/Integração/ADMC no espelho, tira essas pessoas do "Sem apontamento" e lista em Relatórios';
+var CBSI_VER=103;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='103 · 07/08/2026 · Oculta o texto "NF em … · mês único (…)" do cabeçalho da competência';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
