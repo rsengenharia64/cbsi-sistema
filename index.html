@@ -8884,9 +8884,24 @@ window.analiseExportar=function(){
 var ROBO_SUB=lsg('cbsi-v15-robo-sub','exec');
 window.roboSub=function(name){
   ROBO_SUB=name;lss('cbsi-v15-robo-sub',name);
-  [].slice.call(document.querySelectorAll('#roboBox .rsub')).forEach(function(el){el.style.display=(el.getAttribute('data-sub')===name)?'':'none'});
-  [].slice.call(document.querySelectorAll('#roboBox .rsubtab')).forEach(function(el){var on=el.getAttribute('data-tab')===name;el.style.background=on?'var(--cs)':'transparent';el.style.color=on?'#fff':'var(--dm)'});
+  [].slice.call(document.querySelectorAll('#p-ponto .rsub')).forEach(function(el){el.style.display=(el.getAttribute('data-sub')===name)?'':'none'});
+  [].slice.call(document.querySelectorAll('#p-ponto .rsubtab')).forEach(function(el){var on=el.getAttribute('data-tab')===name;el.style.background=on?'var(--cs)':'transparent';el.style.color=on?'#fff':'var(--dm)'});
 };
+// traz o Robô (header+nav) para o topo da aba e organiza os blocos da BASE (Jornadas, Métricas, Uploads)
+// nas sub-abas certas — sem mover para dentro do roboBox (que é reconstruído), apenas marcando data-sub.
+function roboOrganizarBase(){
+  var pg=document.getElementById('p-ponto'),box=document.getElementById('roboBox');
+  if(!pg||!box)return;
+  if(pg.firstChild!==box)pg.insertBefore(box,pg.firstChild);   // nav sempre no topo
+  [].slice.call(pg.children).forEach(function(ch){
+    if(ch===box||!ch.getAttribute)return;
+    var t=ch.textContent||'';
+    var sub=/JORNADAS DE TRABALHO/i.test(t)?'jornada':(/M[ÉE]TRICAS DA JORNADA ATIVA/i.test(t)?'exec':'dados');
+    ch.classList.add('rsub');ch.setAttribute('data-sub',sub);
+  });
+  try{window.roboSub(ROBO_SUB)}catch(e){}
+}
+window.roboOrganizarBase=roboOrganizarBase;
 // VISÃO EXECUTIVA — bate o olho: efetivo presente/faltante, capacidade × registrado, horas e aderência
 function execHTML(FA,con){
   var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS,regs=(FA&&FA.regs)?FA.regs:[];
@@ -9071,6 +9086,7 @@ function renderRobo(){
   +'</div></div>'
   +'</div>'   /* fim dados */
   +'</div>';
+  try{roboOrganizarBase()}catch(e){console.warn('organizar base:',e)}
   function kpi(l,v,c){return '<div style="border:1px solid var(--bd);border-radius:8px;padding:8px;text-align:center"><div style="font-size:8px;color:var(--dm);font-weight:700">'+l+'</div><div style="font-size:16px;font-weight:800;color:'+c+'">'+v+'</div></div>'}
 }
 window.renderRobo=renderRobo;
@@ -9344,8 +9360,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=82;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='82 · 04/08/2026 · sub-abas + Visão Executiva';
+var CBSI_VER=83;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='83 · 04/08/2026 · sub-abas organizam toda a aba (base incluída)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
