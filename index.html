@@ -8984,7 +8984,7 @@ function renderRobo(){
   Object.values(con.porFunc).forEach(function(a){tot.hn+=a.hn;tot.he50+=a.he50;tot.he50ap+=(+a.he50ap||0);tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn});
   var funcs=funcoesBM();
   var semDepara=Object.keys(con.porFunc).filter(function(f){return f.indexOf('(sem De×Para')===0});
-  var _SUBS=[['exec','📊 Visão Executiva'],['relatorios','📈 Relatórios'],['deacordo','🔐 De Acordo HE'],['auditoria','🔍 Auditoria & Edição'],['jornada','⏱ Jornada & Regras'],['dados','📥 Dados & Drive']];
+  var _SUBS=[['exec','📊 Visão Executiva'],['relatorios','📈 Relatórios'],['capacidade','⚙️ Capacidade Produtiva'],['deacordo','🔐 De Acordo HE'],['auditoria','🔍 Auditoria & Edição'],['jornada','⏱ Jornada & Regras'],['dados','📥 Dados & Drive']];
   var SUBNAV='<div style="display:flex;gap:3px;flex-wrap:wrap;margin:4px 0 8px;border-bottom:2px solid var(--bd);padding-bottom:5px">'+_SUBS.map(function(s){var on=ROBO_SUB===s[0];return '<button class="rsubtab" data-tab="'+s[0]+'" onclick="roboSub(\''+s[0]+'\')" style="font-size:9px;font-weight:700;padding:5px 11px;border:1px solid var(--bd);border-radius:7px 7px 0 0;cursor:pointer;background:'+(on?'var(--cs)':'transparent')+';color:'+(on?'#fff':'var(--dm)')+'">'+s[1]+'</button>'}).join('')+'</div>';
   function _sw(n){return '<div class="rsub" data-sub="'+n+'" style="'+(ROBO_SUB===n?'':'display:none')+'">'}
 
@@ -9045,8 +9045,8 @@ function renderRobo(){
   +'</div>'   /* fim exec */
   +_sw('relatorios')
   +analiseHTML(FA,con)
-  +capacidadeHTML(FA,con)
   +'</div>'   /* fim relatorios (parte 1) */
+  +_sw('capacidade')+capacidadeHTML(FA,con)+'</div>'
   +_sw('deacordo')+deAcordoHTML(FA)+'</div>'
   +_sw('auditoria')+auditoriaHTML(FA)+'</div>'
   +_sw('relatorios')
@@ -9381,8 +9381,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=84;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='84 · 04/08/2026 · caixas da Visão Executiva clicáveis → detalhe';
+var CBSI_VER=85;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='85 · 07/08/2026 · Capacidade Produtiva por Disciplina em sub-aba própria';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
