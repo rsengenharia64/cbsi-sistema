@@ -9362,6 +9362,12 @@ function execHTML(FA,con){
     var clk=link?(' onclick="'+link+'" style="border-top:3px solid '+c+';cursor:pointer" title="clique para ver o detalhamento e tratar"'):(' style="border-top:3px solid '+c+'"');
     return '<div class="kp"'+clk+'><div class="kl">'+l+(link?' <span style="font-size:9px;color:var(--ca)">🔎</span>':'')+'</div><div class="kv" style="color:'+c+';font-size:20px">'+v+'</div>'+(s?'<div class="ks">'+s+(link?' · <span style="color:var(--ca);font-weight:700">ver ›</span>':'')+'</div>':'')+'</div>';
   }
+  // CARD GRANDE (executivo) — mesmo dado, visual ampliado e harmônico
+  function boxB(l,v,c,s,link){
+    var base='border-top:4px solid '+c+';padding:16px 14px;min-height:86px;display:flex;flex-direction:column;justify-content:center';
+    var clk=link?(' onclick="'+link+'" style="'+base+';cursor:pointer" title="clique para ver o detalhamento e tratar"'):(' style="'+base+'"');
+    return '<div class="kp"'+clk+'><div class="kl" style="font-size:11px;letter-spacing:.3px">'+l+(link?' <span style="font-size:10px;color:var(--ca)">🔎</span>':'')+'</div><div class="kv" style="color:'+c+';font-size:32px;font-weight:800;line-height:1.15">'+v+'</div>'+(s?'<div class="ks" style="font-size:9px">'+s+(link?' · <span style="color:var(--ca);font-weight:700">ver ›</span>':'')+'</div>':'')+'</div>';
+  }
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
     +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:6px">📊 VISÃO EXECUTIVA — '+((FA&&FA.titulo)||'período')+' <span style="font-size:8px;font-weight:400;color:var(--dm)">· clique nas caixas com 🔎 para ver quem é e tratar</span></div>'
     // EFETIVO
@@ -9389,30 +9395,27 @@ function execHTML(FA,con){
         +(_semanas.length?_semanas.map(function(w){var sel=(+(ROBO_UI.aderSemana||0)===w.i)||(!ROBO_UI.aderSemana&&w===_semanas[_semanas.length-1]);return '<option value="'+w.i+'" '+(sel?'selected':'')+'>Sem '+w.i+' ('+fmtD(w.ini).slice(0,5)+'–'+fmtD(w.fim).slice(0,5)+')</option>'}).join(''):'<option>—</option>')
         +'</select>'):'')
     +'</span></div>'
-    +'<div class="g g" style="grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:4px">'
-    +box('Previsto até aqui',_pc(esperadoPct)+'%','var(--cs)',duDecor+' de '+duTotal+' dias úteis'+(_absPct>0?(' · −'+_pc(_absPct)+'% absent.'):'')+' · '+aderLabel)
-    +box('Realizado',_pc(realizadoPct)+'%','var(--gn)',h2hm(registradoRef)+' de '+h2hm(capMes))
+    +'<div class="g g" style="grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:6px">'
+    +boxB('Previsto até aqui',_pc(esperadoPct)+'%','var(--cs)',duDecor+' de '+duTotal+' dias úteis'+(_absPct>0?(' · −'+_pc(_absPct)+'% absent.'):'')+' · '+aderLabel)
+    +boxB('Realizado',_pc(realizadoPct)+'%','var(--gn)',h2hm(registradoRef)+' de '+h2hm(capMes))
     // ADERÊNCIA no formato "realizado% / previsto%" (o que o gestor quer bater o olho) + lupa para o motivo
-    +'<div class="kp" onclick="roboIrDetalhe(\'relatorios\',\'analiseSemBatida\')" style="border-top:3px solid '+corA+';cursor:pointer" title="Aderência = realizado ÷ previsto. Clique para entender o motivo (quem não registrou horas / faltas).">'
-      +'<div class="kl">Aderência ao período <span style="font-size:9px;color:var(--ca)">🔎</span></div>'
-      +'<div class="kv" style="color:'+corA+';font-size:17px">'+_pc(realizadoPct)+'% <span style="font-size:12px;color:var(--dm)">/ '+_pc(esperadoPct)+'%</span></div>'
-      +'<div class="ks">realizado / previsto · <b style="color:'+corA+'">'+aprov+'% '+aderIco+'</b> · ver ›</div></div>'
-    +box('Projeção fim do mês',projPct+'%',corP,h2hm(projMes)+' h no ritmo atual')
+    +'<div class="kp" onclick="roboIrDetalhe(\'relatorios\',\'analiseSemBatida\')" style="border-top:4px solid '+corA+';cursor:pointer;padding:16px 14px;min-height:86px;display:flex;flex-direction:column;justify-content:center" title="Aderência = realizado ÷ previsto. Clique para entender o motivo (quem não registrou horas / faltas).">'
+      +'<div class="kl" style="font-size:11px;letter-spacing:.3px">Aderência ao período <span style="font-size:10px;color:var(--ca)">🔎</span></div>'
+      +'<div class="kv" style="color:'+corA+';font-size:32px;font-weight:800;line-height:1.15">'+_pc(realizadoPct)+'% <span style="font-size:18px;color:var(--dm)">/ '+_pc(esperadoPct)+'%</span></div>'
+      +'<div class="ks" style="font-size:9px">realizado / previsto · <b style="color:'+corA+'">'+aprov+'% '+aderIco+'</b> · ver ›</div></div>'
     +'</div>'
     +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">📅 <b>'+((FA&&FA.titulo&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'Período')+': '+duDecor+' de '+duTotal+' dias úteis decorridos = '+_pc(esperadoPct)+'% previsto'+(_absPct>0?(' (já com −'+_pc(_absPct)+'% de absenteísmo)'):'')+'</b>. Leitura: registramos <b>'+_pc(realizadoPct)+'%</b> do total do mês, de <b>'+_pc(esperadoPct)+'%</b> que era o esperado até hoje → aderência ao ritmo <b>'+aprov+'%</b>. No fim do mês fecha realizado% / '+_pc(100*_absFac)+'%.</div>'
     // HORAS A FATURAR + FINANCEIRO
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:6px 0 4px">💵 HORAS A FATURAR & ADERÊNCIA</div>'
-    +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px">'
-    +box('HN — Normal',h2hm(T.hn),'var(--cs)','faturável')
-    +box('HE validada',h2hm(T.he50),'var(--gn)','reconhecida cliente',"roboSub('deacordo')")
+    +'<div class="g g" style="grid-template-columns:repeat(3,1fr);gap:10px">'
+    +boxB('HN — Normal',h2hm(T.hn),'var(--cs)','faturável')
+    +boxB('HE validada',h2hm(T.he50),'var(--gn)','reconhecida cliente',"roboSub('deacordo')")
     +(function(){var bruto=T.he50ap-T.he50, pr=(d.perdaReal!=null?d.perdaReal:bruto), buf=(d.perdaBuffer||0), prR=(d.perdaRealR$||0);
       var tt='DISTORÇÃO REAL = o que a CBSI PAGA na folha e NÃO recebe do cliente. Cálculo: HE não reconhecida (bruto) '+h2hm(bruto)+' − buffer de 15min que a CBSI não paga (06:45-07:00 / 17:00-17:15 / sex 16:00-16:15) '+h2hm(buf)+' = '+h2hm(pr)+' ('+_brl(prR)+'). A tolerância absorvida (batida dentro dos 15min) nunca entrou aqui. Clique para tratar no De Acordo HE.';
-      return '<div class="kp" onclick="roboSub(\'deacordo\')" style="border-top:3px solid var(--rd);cursor:pointer" title="'+tt.replace(/"/g,'&quot;')+'"><div class="kl">Distorção real <span style="font-size:9px;color:var(--ca)">🔎</span></div><div class="kv" style="color:var(--rd);font-size:20px">'+h2hm(pr)+'</div><div class="ks">'+_brl(prR)+' · custo s/ receita · <span style="color:var(--ca);font-weight:700">ver ›</span></div></div>';
+      return '<div class="kp" onclick="roboSub(\'deacordo\')" style="border-top:4px solid var(--rd);cursor:pointer;padding:16px 14px;min-height:86px;display:flex;flex-direction:column;justify-content:center" title="'+tt.replace(/"/g,'&quot;')+'"><div class="kl" style="font-size:11px;letter-spacing:.3px">Distorção real <span style="font-size:10px;color:var(--ca)">🔎</span></div><div class="kv" style="color:var(--rd);font-size:32px;font-weight:800;line-height:1.15">'+h2hm(pr)+'</div><div class="ks" style="font-size:9px">'+_brl(prR)+' · custo s/ receita · <span style="color:var(--ca);font-weight:700">ver ›</span></div></div>';
     })()
-    +box('Custo / Receita',d.receita>0?d.relacao.toFixed(0)+'%':'—',cor,_brl(d.custo.total)+' / '+_brl(d.receita),"roboIrDetalhe('relatorios','analiseExcecao')")
-    +box('Situação',verd.replace(/^[^ ]+ /,''),cor,' ',"roboIrDetalhe('relatorios','analiseExcecao')")
     +'</div>'
-    +'<div style="font-size:7px;color:var(--dm);margin-top:5px">Ajuste custo-hora e receita na sub-aba <b>Relatórios</b>. "Sem apontamento" e detalhamento de exceções também em Relatórios. Efetivo cadastrado vem do Cadastro de Efetivos ('+efetTotal+').</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-top:5px">Custo × receita e situação de aderência agora ficam na sub-aba <b>Relatórios</b> (com ajuste de custo-hora e receita). "Sem apontamento" e exceções também em Relatórios. Efetivo cadastrado vem do Cadastro de Efetivos ('+efetTotal+').</div>'
     +'</div>';
   return h;
 }
@@ -9481,14 +9484,6 @@ function renderRobo(){
    })()
   +'</div>'   /* fim jornada */
   +_sw('exec')+execHTML(FA,con)
-  // KPIs
-  +'<div class="g g5" style="margin-bottom:8px">'
-  +kpi('HN — Hora Normal',h2hm(tot.hn),'var(--cs)')
-  +'<div style="border:1px solid var(--bd);border-radius:8px;padding:8px;text-align:center"><div style="font-size:8px;color:var(--dm);font-weight:700">HE 50% — APURADA → VALIDADA</div>'
-    +'<div style="font-size:15px;font-weight:800"><span style="color:var(--co)" title="apurada = trabalhada (bruta)">'+h2hm(tot.he50ap)+'</span> <span style="color:var(--dm);font-weight:400">→</span> <span style="color:var(--gn)" title="validada no De Acordo HE = o que vai pagar/faturar">'+h2hm(tot.he50)+'</span></div>'
-    +'<div style="font-size:7px;color:var(--dm)">1º = apurada (trabalhada) · 2º = validada (a pagar)</div></div>'
-  +kpi('HE 100%',h2hm(tot.he100),'var(--co)')+kpi('HE 150%',h2hm(tot.he150),'var(--rd)')+kpi('AD. Noturno',h2hm(tot.adn),'var(--gn)')
-  +'</div>'
   +'</div>'   /* fim exec */
   +_sw('relatorios')
   +analiseHTML(FA,con)
@@ -9840,8 +9835,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=100;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='100 · 07/08/2026 · Previsto com −5% absenteísmo (100→95%) editável + DISTORÇÃO REAL (HE que a CBSI paga e não recebe, buffer 15min deduzido) no lugar do bruto não reconhecido';
+var CBSI_VER=101;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='101 · 07/08/2026 · Painel executivo enxuto: oculta Custo/Receita, Situação, faixa HN/HE/HE100/HE150/ADN e Projeção (redundantes) · cards ampliados 3+3 para visual harmônico e executivo';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
