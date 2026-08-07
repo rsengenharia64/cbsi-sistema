@@ -8985,7 +8985,7 @@ function analiseDados(FA){
     T.adnAp+=((+l.adnAp!=null&&l.adnAp!=='')?+l.adnAp:(+l.adn||0));
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
-    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,manualPend:0,atestado:0,falta:0,dias:0,tolAntes:0,tolApos:0,diasTol:0};
+    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,manualPend:0,atestado:0,falta:0,dias:0,tolAntes:0,tolApos:0,diasTol:0,mobiliza:0,mobUlt:''};
     c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
     var _o=String((l.obs||'')+' '+(l.phtd||''));
     if(/ATESTADO/i.test(_o))c.atestado++;else if(/FALTA|AUSENC/i.test(_o))c.falta++;
@@ -9014,9 +9014,14 @@ function analiseDados(FA){
         }
       }
     }else if((+l.trab||0)===0 && ['SEG','TER','QUA','QUI','SEX'].indexOf(dN)>=0 && !/DOM|SAB|F[ÉE]RIAS|FERIAS|DSR|FOLGA|ATESTADO|FALTA|LICEN|AFASTAD|COMP/i.test(String((l.obs||'')+' '+(l.phtd||'')))){
+      // MOBILIZAÇÃO: o espelho aponta o dia como Treinamento / Aguardando Libera Crachá / Integração
+      // (campo ct) ou o código ADMC (admissão). Entre admissão e fim do treinamento do cliente o
+      // colaborador NÃO bate ponto (~30 dias). NÃO é "sem apontamento" — é etapa de mobilização.
+      var _mob=/TREINAMENTO|AGUARDANDO\s*LIBERA|INTEGRA[ÇC]|MOBILIZ/i.test(String(l.ct||''))||String(l.phtd||'').toUpperCase()==='ADMC';
+      if(_mob){c.mobiliza++;if(l.data)c.mobUlt=l.data;}
       // cargo de confiança (supervisor/coordenador/gerente/eng. segurança) NÃO bate ponto:
       // dia sem batida vira "aguardando ponto manual" (fonte = pasta PONTO MANUAL), não "sem apontamento".
-      if(c.confianca)c.manualPend++;else c.semBatida++;
+      else if(c.confianca)c.manualPend++;else c.semBatida++;
     }
   });
   var ch=custoHoraEfetivo();
@@ -9051,6 +9056,7 @@ function analiseHTML(FA,con){
   var sbList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return c.semBatida>0}).sort(function(x,y){return y.semBatida-x.semBatida});
   var atList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.atestado||0)+(c.falta||0)>0}).sort(function(x,y){return ((y.atestado||0)+(y.falta||0))-((x.atestado||0)+(x.falta||0))});
   var mpList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.manualPend||0)>0}).sort(function(x,y){return (y.manualPend||0)-(x.manualPend||0)});
+  var mobList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.mobiliza||0)>0}).sort(function(x,y){return (y.mobiliza||0)-(x.mobiliza||0)});
   var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
   var verd=d.receita<=0?'informe a receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE — custo ≥ receita':(d.relacao>=d.alvo?'🟡 ATENÇÃO — acima do alvo':'🟢 ADERENTE'));
   function kp(l,v,c,s){return '<div class="kp" style="border-top:2px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+'">'+v+'</div>'+(s?'<div class="ks">'+s+'</div>':'')+'</div>';}
@@ -9188,6 +9194,13 @@ function analiseHTML(FA,con){
     +(mpList.length?mpList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+(c.cargo||c.func)+'</td><td style="text-align:center;font-weight:800;color:var(--co)">'+c.manualPend+'</td></tr>'}).join(''):'<tr><td colspan="4" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum cargo de confiança pendente — todos com ponto manual no período.</td></tr>')
     +'</table></div>'
     +'<div style="font-size:7px;color:var(--dm);margin-top:3px">Cargos tratados como ponto manual: <b>'+((P.cargosManual||[]).join(', ')||'—')+'</b>. Coloque o card na pasta <b>PONTO MANUAL</b> do mês no Drive (ou faça upload) e o sistema preenche a jornada.</div></details>';
+  // EM MOBILIZAÇÃO — apontamento de Treinamento / Aguardando Libera Crachá / Integração / ADMC no espelho
+  h+='<details style="margin-top:4px" id="analiseMobilizacao"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--ca)">🚧 Colaboradores em mobilização — Treinamento / Aguardando crachá / Admissão ('+mobList.length+') <span style="font-weight:400;color:var(--dm)">— não são "sem apontamento"; o espelho aponta a etapa de mobilização (entre admissão e liberação do cliente)</span></summary>'
+    +'<div style="max-height:220px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Dias em mobilização</th><th>Situação</th></tr>'
+    +(mobList.length?mobList.map(function(c){var iniciou=(c.dias||0)>0;return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'(sem cadastro)')+'</td><td style="text-align:left;color:var(--dm)">'+(c.func||'—')+'</td><td style="text-align:center;font-weight:800;color:var(--ca)">'+c.mobiliza+'</td><td style="text-align:center;font-weight:700;color:'+(iniciou?'var(--gn)':'var(--ca)')+'">'+(iniciou?'✅ já iniciou produção':'🚧 em mobilização')+'</td></tr>'}).join(''):'<tr><td colspan="5" style="text-align:center;padding:8px;color:var(--gn)">Nenhum colaborador em mobilização no período.</td></tr>')
+    +'</table></div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-top:3px">Detecção pelo apontamento do espelho: <b>Treinamento</b>, <b>Aguardando Libera Crachá</b>, <b>Integração</b> ou código <b>ADMC</b> em dia útil sem batida. A caixinha "Em mobilização" conta quem ainda <b>não iniciou produção</b>; quem já bateu ponto aparece aqui como "já iniciou". Esses dias saem do "Sem apontamento".</div></details>';
   // ATESTADO / FALTA por colaborador (id fixo p/ o link da Visão Executiva)
   h+='<details style="margin-top:4px" id="analiseAtestado"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--co)">🩺 Colaboradores com atestado / falta — '+atList.length+'</summary>'
     +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
@@ -9287,6 +9300,9 @@ function execHTML(FA,con){
   var nAtest=Object.keys(atest).length, nFalta=Object.keys(falt).length;
   var semAp=Object.keys(d.byC).filter(function(k){return d.byC[k].semBatida>0}).length;
   var manPend=Object.keys(d.byC).filter(function(k){return (d.byC[k].manualPend||0)>0}).length;
+  // EM MOBILIZAÇÃO: tem apontamento de mobilização (Treinamento/Aguardando Crachá/Integração/ADMC)
+  // e ainda NÃO iniciou produção no período (nenhum dia trabalhado) → "estão em mobilização".
+  var mobil=Object.keys(d.byC).filter(function(k){return (d.byC[k].mobiliza||0)>0 && (d.byC[k].dias||0)===0}).length;
   var faltantes=Math.max(0,efetTotal-presentes);
   var capH=(+P.capHorasMes||184);
   var capTotal=efetTotal*capH, capPres=presentes*capH;
@@ -9372,12 +9388,13 @@ function execHTML(FA,con){
     +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:6px">📊 VISÃO EXECUTIVA — '+((FA&&FA.titulo)||'período')+' <span style="font-size:8px;font-weight:400;color:var(--dm)">· clique nas caixas com 🔎 para ver quem é e tratar</span></div>'
     // EFETIVO
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">👥 EFETIVO</div>'
-    +'<div class="g g" style="grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:8px">'
+    +'<div class="g g" style="grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:8px">'
     +box('Cadastrado',String(efetTotal),'var(--cs)','no efetivo')
     +box('Presentes',String(presentes),'var(--gn)','com apontamento')
     +box('Faltantes',String(faltantes),faltantes>0?'var(--rd)':'var(--gn)','cadastro − presente',"roboIrDetalhe('relatorios','analiseSemBatida')")
     +box('Atestado',String(nAtest),nAtest>0?'var(--co)':'var(--dm)','no período',"roboIrDetalhe('relatorios','analiseAtestado')")
     +box('Ponto manual',String(manPend),manPend>0?'var(--co)':'var(--gn)','confiança — aguardando card',"roboIrDetalhe('relatorios','analiseManualPend')")
+    +box('Em mobilização',String(mobil),mobil>0?'var(--ca)':'var(--gn)','treinamento/crachá — não fatura',"roboIrDetalhe('relatorios','analiseMobilizacao')")
     +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','não bate — não fatura',"roboIrDetalhe('relatorios','analiseSemBatida')")
     +'</div>'
     // CAPACIDADE DE HORAS
@@ -9835,8 +9852,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=101;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='101 · 07/08/2026 · Painel executivo enxuto: oculta Custo/Receita, Situação, faixa HN/HE/HE100/HE150/ADN e Projeção (redundantes) · cards ampliados 3+3 para visual harmônico e executivo';
+var CBSI_VER=102;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='102 · 07/08/2026 · Caixinha EM MOBILIZAÇÃO no painel executivo: detecta Treinamento/Aguardando Crachá/Integração/ADMC no espelho, tira essas pessoas do "Sem apontamento" e lista em Relatórios';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
