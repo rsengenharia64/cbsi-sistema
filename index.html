@@ -6951,6 +6951,7 @@ window.roboSetAte=function(v){ROBO_UI.ate=v;roboUISave();renderRobo()};
 window.roboSetRefManual=function(v){ROBO_UI.ref=v;roboUISave();renderRobo()};
 window.roboSetCompMes=function(v){ROBO_UI.compMes=(v==='topo'?'topo':(+v||''));roboUISave();renderRobo()};
 window.roboSetCompAno=function(v){ROBO_UI.compAno=(+v||'');roboUISave();renderRobo()};
+window.roboSetAderBase=function(v){ROBO_UI.aderBase=v;roboUISave();renderRobo()};
 window.roboSetParam=function(k,v){ROBO_PARAMS[k]=+v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 window.roboSetParamStr=function(k,v){ROBO_PARAMS[k]=v;lss('cbsi-v15-robo-params',ROBO_PARAMS);renderRobo()};
 // Competência do BOLETIM DE MEDIÇÃO — o BM original era fixo em Jan/Fev (MED1/MED1A);
@@ -9156,7 +9157,33 @@ function execHTML(FA,con){
   var capH=(+P.capHorasMes||184);
   var capTotal=efetTotal*capH, capPres=presentes*capH;
   var registrado=0;regs.forEach(function(l){registrado+=(+l.trab||0)});
-  var aprov=capPres>0?Math.round(registrado/capPres*100):0;
+  // ---- APROVEITAMENTO PROPORCIONAL AO PERÍODO DECORRIDO (não ao mês cheio) ----
+  var feriados=P.feriados||[];
+  function _du(ini,fim){ // dias úteis (seg–sex menos feriados), inclusive
+    if(!ini||!fim||isNaN(ini)||isNaN(fim)||fim<ini)return 0;
+    var n=0,dd=new Date(ini.getFullYear(),ini.getMonth(),ini.getDate());
+    while(dd<=fim){var wd=dd.getDay();var ds=pad2(dd.getDate())+'/'+pad2(dd.getMonth()+1)+'/'+dd.getFullYear();if(wd>=1&&wd<=5&&feriados.indexOf(ds)<0)n++;dd.setDate(dd.getDate()+1);}
+    return n;
+  }
+  function _janela(ini,fim){var r=0,ids={};regs.forEach(function(l){var dd=dataBR(l.data);if(dd>=ini&&dd<=fim){r+=(+l.trab||0);if((+l.trab||0)>0)ids[l.id||l.mat||l.nome]=1;}});return{reg:r,pres:Object.keys(ids).length};}
+  var _datas=regs.map(function(l){return dataBR(l.data)}).filter(function(x){return x&&!isNaN(x)});
+  var _maxD=_datas.length?new Date(Math.max.apply(null,_datas.map(function(x){return x.getTime()}))):null;
+  var _minD=_datas.length?new Date(Math.min.apply(null,_datas.map(function(x){return x.getTime()}))):null;
+  var pIni,pFim;
+  if(FA&&FA.compMesEff){var _pp=periodoDaCompetencia(FA.compMesEff,FA.compAnoEff||(new Date()).getFullYear());pIni=_pp.ini;pFim=_pp.fim;}
+  else{pIni=_minD;pFim=_maxD;}
+  var duTotal=_du(pIni,pFim), duDecor=_du(pIni,_maxD||pIni);
+  if(duDecor>duTotal)duDecor=duTotal; if(duDecor<1&&_maxD)duDecor=1;
+  var perDay=capH/Math.max(1,duTotal);                       // capacidade/colab por dia útil
+  var aderBase=(ROBO_UI&&ROBO_UI.aderBase)||'decorrido';
+  var registradoRef=registrado, capRef=capPres, aderLabel='', aderSub='';
+  if(aderBase==='mes'){ registradoRef=registrado; capRef=presentes*capH; aderLabel='mês cheio'; aderSub='registrado ÷ (presentes × '+capH+'h)'; }
+  else if(aderBase==='tendencia'){ var proj=duDecor>0?(registrado/duDecor*duTotal):registrado; registradoRef=proj; capRef=presentes*capH; aderLabel='tendência (fecha o mês)'; aderSub='projeção no ritmo atual × mês cheio'; }
+  else if(aderBase==='semana'){ var wIni=_maxD?new Date(_maxD.getFullYear(),_maxD.getMonth(),_maxD.getDate()-6):pIni; if(wIni<pIni)wIni=pIni; var jw=_janela(wIni,_maxD||pFim); var duw=_du(wIni,_maxD||wIni); registradoRef=jw.reg; capRef=(jw.pres||presentes)*perDay*Math.max(1,duw); aderLabel='última semana'; aderSub=(jw.pres||presentes)+' pres × '+duw+' dia(s) úteis'; }
+  else if(aderBase==='dia'){ var jd=_maxD?_janela(_maxD,_maxD):{reg:0,pres:0}; registradoRef=jd.reg; capRef=(jd.pres||presentes)*perDay; aderLabel='último dia '+(_maxD?fmtD(_maxD):''); aderSub=(jd.pres||presentes)+' pres × '+(Math.round(perDay*10)/10)+'h/dia'; }
+  else { registradoRef=registrado; capRef=presentes*perDay*Math.max(1,duDecor); aderLabel='período decorrido'; aderSub=duDecor+' de '+duTotal+' dias úteis · presentes × '+(Math.round(perDay*10)/10)+'h/dia'; }
+  var aprov=capRef>0?Math.round(registradoRef/capRef*100):0;
+  var projMes=duDecor>0?Math.round(registrado/duDecor*duTotal):registrado;   // horas projetadas p/ fim do mês
   var corA=aprov>=90?'var(--gn)':(aprov>=70?'#c9a000':'var(--rd)');
   var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
   var verd=d.receita<=0?'informe receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE':(d.relacao>=d.alvo?'🟡 ATENÇÃO':'🟢 ADERENTE'));
@@ -9176,13 +9203,17 @@ function execHTML(FA,con){
     +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','não bate — não fatura',"roboIrDetalhe('relatorios','analiseSemBatida')")
     +'</div>'
     // CAPACIDADE DE HORAS
-    +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">⏱ CAPACIDADE DE HORAS — <span style="font-weight:400">capacidade/colab no mês: <input type="number" min="1" value="'+capH+'" onchange="roboSetParam(\'capHorasMes\',this.value)" style="width:52px;font-size:9px;padding:2px"> h</span></div>'
-    +'<div class="g g" style="grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:6px">'
-    +box('Capacidade (cadastro)',h2hm(capTotal),'var(--cs)',efetTotal+' × '+capH+'h')
-    +box('Capacidade (presentes)',h2hm(capPres),'var(--ca)',presentes+' × '+capH+'h')
-    +box('Horas registradas',h2hm(registrado),'var(--gn)','realizado do ponto')
-    +box('Aproveitamento',aprov+'%',corA,'registrado ÷ presentes')
+    +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">⏱ CAPACIDADE DE HORAS — <span style="font-weight:400">capacidade/colab no mês: <input type="number" min="1" value="'+capH+'" onchange="roboSetParam(\'capHorasMes\',this.value)" style="width:52px;font-size:9px;padding:2px"> h</span>'
+    +'<span style="margin-left:auto;font-weight:400">Aderência por: <select onchange="roboSetAderBase(this.value)" style="font-size:9px;font-weight:700">'
+    +['dia|Dia','semana|Semana','decorrido|Mês (decorrido)','mes|Mês (cheio)','tendencia|Tendência'].map(function(o){var kv=o.split('|');return '<option value="'+kv[0]+'" '+(aderBase===kv[0]?'selected':'')+'>'+kv[1]+'</option>'}).join('')
+    +'</select></span></div>'
+    +'<div class="g g" style="grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:4px">'
+    +box('Capacidade '+(aderBase==='mes'||aderBase==='tendencia'?'(mês cheio)':'('+aderLabel+')'),h2hm(capRef),'var(--cs)',aderSub)
+    +box('Horas '+(aderBase==='tendencia'?'projetadas':'registradas'),h2hm(registradoRef),'var(--gn)',aderBase==='tendencia'?'no ritmo atual':(aderBase==='dia'||aderBase==='semana'?'no recorte':'realizado do ponto'))
+    +box('Aproveitamento',aprov+'%',corA,aderLabel)
+    +box('Projeção fim do mês',(capPres>0?Math.round(projMes/capPres*100):0)+'%',(capPres>0&&projMes/capPres>=0.9?'var(--gn)':(capPres>0&&projMes/capPres>=0.7?'#c9a000':'var(--rd)')),h2hm(projMes)+' h no ritmo atual')
     +'</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">📅 Período '+((FA&&FA.titulo&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'')+': <b>'+duDecor+' de '+duTotal+' dias úteis decorridos</b> ('+(duTotal>0?Math.round(duDecor/duTotal*100):0)+'% do período). O aproveitamento respeita o recorte selecionado — no meio do mês compara contra a capacidade proporcional, não contra o mês inteiro.</div>'
     // HORAS A FATURAR + FINANCEIRO
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:6px 0 4px">💵 HORAS A FATURAR & ADERÊNCIA</div>'
     +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px">'
@@ -9615,8 +9646,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=90;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='90 · 07/08/2026 · Aderência por quantidade: Pagamos (folha apurada) × Cliente aprova (BM) por categoria HN/HE + reflexo financeiro';
+var CBSI_VER=91;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='91 · 07/08/2026 · Aproveitamento proporcional ao período decorrido + filtro dia/semana/mês/tendência + projeção fim do mês';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
