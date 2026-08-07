@@ -5873,6 +5873,7 @@ var ROBO_PARAMS_DEFAULT={
   salarioMedia:0,                // 0 = usa o salário médio baqueado da base (SAL_MEDIA); >0 = sobrescreve
   receitaModo:'hhBM',            // 'hhBM' = só a parte de HH do BM aprovado · 'totalBM' = total do BM · 'manual' = receitaRef
   capHorasMes:184,               // capacidade de horas por colaborador no mês (jornada 44h) — Visão Executiva
+  absenteismo:5,                 // % de absenteísmo previsto: reduz o "previsto até aqui" (100% → 95%) e a meta da aderência
   paramsV:7,                     // versão das regras (migração automática)
   pontoIni:16, pontoFim:15,      // período do espelho de ponto (informativo)
   jornadaPadraoDia:9,             // horas de trabalho num dia cheio (07-17 com 1h almoço)
@@ -5914,6 +5915,7 @@ if((+ROBO_PARAMS.paramsV||1)<6){ROBO_PARAMS.heTolMin=15;if(ROBO_PARAMS.custoHora
 if((+ROBO_PARAMS.paramsV||1)<7){ROBO_PARAMS.custoModo='salario';ROBO_PARAMS.custoEncargos=1.79;ROBO_PARAMS.custoBaseHoras=184;if(ROBO_PARAMS.salarioMedia==null)ROBO_PARAMS.salarioMedia=0;ROBO_PARAMS.receitaModo='hhBM';ROBO_PARAMS.paramsV=7;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 // v8: cargos de confiança (ponto manual) — sem batida deixa de contar como "sem apontamento"
 if((+ROBO_PARAMS.paramsV||1)<8){if(!ROBO_PARAMS.cargosManual||!ROBO_PARAMS.cargosManual.length)ROBO_PARAMS.cargosManual=['SUPERVISOR','COORDENADOR','GERENTE','ENGENHEIRO'];ROBO_PARAMS.paramsV=8;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
+if((+ROBO_PARAMS.paramsV||1)<9){if(ROBO_PARAMS.absenteismo==null)ROBO_PARAMS.absenteismo=5;ROBO_PARAMS.paramsV=9;lss('cbsi-v15-robo-params',ROBO_PARAMS)}
 // helper: o cargo é de confiança (ponto manual)?
 function ehCargoManual(cargo){var c=normTxt(cargo||'');var lst=ROBO_PARAMS.cargosManual||[];return lst.some(function(k){return c.indexOf(normTxt(k))>=0});}
 
@@ -8972,7 +8974,7 @@ function analiseDados(FA){
   function jout(dow){return normTxt(dow)==='SEX'?(+P.heJoutSex||16):(+P.heJoutSegQui||17)}
   function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
   var T={hn:0,he50ap:0,he50:0,he100:0,he150:0,adn:0,dias:0,exAntes:0,exApos:0,
-    hnAp:0,he100ap:0,he150ap:0,adnAp:0,tolAntes:0,tolApos:0,diasTol:0};
+    hnAp:0,he100ap:0,he150ap:0,adnAp:0,tolAntes:0,tolApos:0,diasTol:0,perdaBuffer:0};
   var byC={};
   regs.forEach(function(l){
     T.hn+=(+l.hn||0);T.he50ap+=(+l.he50ap||0);T.he50+=(+l.he50||0);T.he100+=(+l.he100||0);T.he150+=(+l.he150||0);T.adn+=(+l.adn||0);
@@ -9000,6 +9002,16 @@ function analiseDados(FA){
         // trabalhado mas NÃO vira HE (regra dos 15 min). Bucket separado da HE apurada/não reconhecida.
         var tA=(antes>1e-9&&antes<=tol+1e-9)?antes:0, tP=(apos>1e-9&&apos<=tol+1e-9)?apos:0;
         if(tA>0||tP>0){c.tolAntes+=tA;c.tolApos+=tP;c.diasTol++;T.tolAntes+=tA;T.tolApos+=tP;T.diasTol++;}
+        // BUFFER DE 15min embutido na HE 50% APURADA (dias ACIMA da tolerância): 06:45-07:00 de manhã e
+        // 17:00-17:15 (sex 16:00-16:15) à tarde. A CBSI NÃO paga esses 15min — então NÃO entram na "distorção
+        // real" (custo folha sem receita). Só conta a fração NÃO reconhecida do dia (o que virou perda).
+        var apDia=+l.he50ap||0, pgDia=+l.he50||0;
+        if(apDia>0.001){
+          var bufDia=((antes>tol+1e-9)?Math.min(antes,tol):0)+((apos>tol+1e-9)?Math.min(apos,tol):0);
+          if(bufDia>apDia)bufDia=apDia;
+          var fracNR=Math.max(0,(apDia-pgDia))/apDia;
+          T.perdaBuffer+=bufDia*fracNR;
+        }
       }
     }else if((+l.trab||0)===0 && ['SEG','TER','QUA','QUI','SEX'].indexOf(dN)>=0 && !/DOM|SAB|F[ÉE]RIAS|FERIAS|DSR|FOLGA|ATESTADO|FALTA|LICEN|AFASTAD|COMP/i.test(String((l.obs||'')+' '+(l.phtd||'')))){
       // cargo de confiança (supervisor/coordenador/gerente/eng. segurança) NÃO bate ponto:
@@ -9021,9 +9033,16 @@ function analiseDados(FA){
   var horasCusto=T.hn+T.he50*1.5+T.he100*2+T.he150*2.5+T.adn*0.2;
   // realizado bruto (soma simples de horas apontadas que entram na conta) × esperado (HH faturado no BM)
   var realHoras=T.hn+T.he50+T.he100+T.he150+T.adn;
+  // DISTORÇÃO REAL (HE 50%): custo que a CBSI paga na folha e NÃO recebe do cliente.
+  //   bruto não reconhecido (apurada − validada) − buffer 15min que a CBSI não paga = perda real.
+  //   A tolerância absorvida (batida DENTRO dos 15min) já está fora da apurada, então não entra aqui.
+  var perdaBuffer=(+T.perdaBuffer||0);
+  var perdaReal=Math.max(0,(T.he50ap-T.he50)-perdaBuffer);
+  var perdaRealR$=perdaReal*ch*1.5;
   return {T:T,byC:byC,custoHora:ch,custoModo:P.custoModo,custo:custo,receita:receita,receitaModo:P.receitaModo,
     bmHH:bmR.hh,bmTotal:bmR.total,bmHHqtd:bmR.hhQtd,bmArquivo:bmR.arquivo,bmOk:bmR.ok,bmTiers:bmR.tiers,mesComp:mesComp,
-    alvo:alvo,relacao:relacao,horasCusto:horasCusto,realHoras:realHoras};
+    alvo:alvo,relacao:relacao,horasCusto:horasCusto,realHoras:realHoras,
+    perdaBuffer:perdaBuffer,perdaReal:perdaReal,perdaRealR$:perdaRealR$};
 }
 function analiseHTML(FA,con){
   var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS;
@@ -9066,7 +9085,8 @@ function analiseHTML(FA,con){
     +'🧭 <b>Rastreabilidade das horas fora da jornada (três grupos, sem sobreposição):</b><br>'
     +'① <b style="color:#c9a000">Tolerância de '+tolMin+' min = '+h2hm(tolTot)+'</b> (manhã 06:45-07:00: '+h2hm(T.tolAntes)+' · tarde 17:00-17:15: '+h2hm(T.tolApos)+' · '+tolList.length+' colab.): batida dentro dos '+tolMin+' min — <u>trabalhada, mas NÃO vira HE</u> pela regra da companhia. Nunca entra em custo nem recebível.<br>'
     +'② <b style="color:var(--co)">HE 50% apurada = '+h2hm(T.he50ap)+'</b> (acima dos '+tolMin+' min): dessa, <b style="color:var(--gn)">'+h2hm(T.he50)+' validada</b> (reconhecida no De Acordo → paga/faturada) e <b style="color:var(--rd)">'+h2hm(cortada)+' não reconhecida</b> (sem autorização do cliente).<br>'
-    +'③ Só viram <u>custo × recebível</u>: HN + HE 50% <b>validada</b> + HE 100% + HE 150%. As '+h2hm(tolTot)+' da tolerância e as '+h2hm(cortada)+' não reconhecidas ficam <b>rastreadas e fora da conta</b>.'
+    +'③ <b style="color:var(--rd)">DISTORÇÃO REAL = '+h2hm(d.perdaReal||0)+' ('+_brl(d.perdaRealR$||0)+')</b>: da HE não reconhecida ('+h2hm(cortada)+'), a CBSI ainda <u>não paga</u> o buffer de '+tolMin+' min embutido nesses dias ('+h2hm(d.perdaBuffer||0)+' — 06:45-07:00 / 17:00-17:15 / sex 16:00-16:15). O que sobra é o que você <b>paga na folha e não recebe do cliente</b> → é o número de <b>ação</b> (impacto na DRE).<br>'
+    +'④ Só viram <u>custo × recebível</u> no indicador: HN + HE 50% <b>validada</b> + HE 100% + HE 150%. A tolerância ('+h2hm(tolTot)+') e o buffer de '+tolMin+' min ficam <b>rastreados e fora da conta</b>.'
     +'</div>';
   // CUSTO × RECEITA
   var margem=d.receita-d.custo.total;
@@ -9297,6 +9317,8 @@ function execHTML(FA,con){
   if(duDecor>duTotal)duDecor=duTotal; if(duDecor<1&&_fimDecor)duDecor=1;
   var perDay=capH/Math.max(1,duTotal);                       // capacidade/colab por dia útil
   var aderBase=(ROBO_UI&&ROBO_UI.aderBase)||'decorrido';
+  // ABSENTEÍSMO: o previsto não é 100% de presença — desconta o % de absenteísmo esperado (default 5% → previsto 95%).
+  var _absPct=(+((ROBO_PARAMS&&ROBO_PARAMS.absenteismo))||0); var _absFac=Math.max(0,1-_absPct/100);
   // LISTAS para escolher DIA e SEMANA específicos (dentro do período de apuração, até hoje)
   var _diasUnicos=(function(){var seen={},arr=[];regs.forEach(function(l){var dd=dataBR(l.data);if(dd&&!isNaN(dd)&&dd>=pIni&&dd<=pFim&&(!_maxReal||dd<=_maxReal)){var k=fmtD(dd);if(!seen[k]){seen[k]=1;arr.push({k:k,d:dd})}}});arr.sort(function(a,b){return a.d-b.d});return arr})();
   var _semanas=(function(){var arr=[],fimW=(_maxReal&&_maxReal<pFim)?_maxReal:pFim,s=new Date(pIni.getFullYear(),pIni.getMonth(),pIni.getDate()),idx=0;while(s<=fimW&&idx<8){var e=new Date(s.getFullYear(),s.getMonth(),s.getDate()+6);if(e>pFim)e=new Date(pFim.getFullYear(),pFim.getMonth(),pFim.getDate());idx++;arr.push({i:idx,ini:new Date(s),fim:e});s=new Date(s.getFullYear(),s.getMonth(),s.getDate()+7)}return arr})();
@@ -9324,8 +9346,9 @@ function execHTML(FA,con){
   // LÓGICA REALIZADO% / PREVISTO%: previsto = fração do mês que o recorte representa (ex.: 15 de 30 dias = 50%);
   // realizado = quanto do total do mês já foi registrado. Aderência = realizado ÷ previsto (100% = exatamente no ritmo).
   var capMes=presentes*capH;                                              // capacidade do MÊS CHEIO (100%)
-  var aprov=capRef>0?Math.round(registradoRef/capRef*100):0;              // aderência ao ritmo (realizado÷previsto)
-  var esperadoPct=capMes>0?Math.round(capRef/capMes*1000)/10:0;           // % do mês previsto até aqui (ex.: 50,0)
+  var capRefAj=capRef*_absFac;                                            // previsto já com absenteísmo descontado
+  var aprov=capRefAj>0?Math.round(registradoRef/capRefAj*100):0;          // aderência ao ritmo (realizado÷previsto ajustado)
+  var esperadoPct=capMes>0?Math.round(capRef*_absFac/capMes*1000)/10:0;   // % do mês previsto até aqui, já com −absenteísmo (ex.: 95,0)
   var realizadoPct=capMes>0?Math.round(registradoRef/capMes*1000)/10:0;   // % do mês já realizado (ex.: 48,5)
   var projMes=duDecor>0?Math.round(registrado/duDecor*duTotal):registrado;// horas projetadas p/ fim do mês
   var projPct=capMes>0?Math.round(projMes/capMes*100):0;
@@ -9353,6 +9376,7 @@ function execHTML(FA,con){
     +'</div>'
     // CAPACIDADE DE HORAS
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">⏱ CAPACIDADE DE HORAS — <span style="font-weight:400">capacidade/colab no mês: <input type="number" min="1" value="'+capH+'" onchange="roboSetParam(\'capHorasMes\',this.value)" style="width:52px;font-size:9px;padding:2px"> h</span>'
+    +'<span style="font-weight:400" title="Absenteísmo previsto: reduz o previsto (100% → '+_pc(100*_absFac)+'%) e serve de meta realista para a aderência.">· absenteísmo: <input type="number" min="0" max="50" step="0.5" value="'+_absPct+'" onchange="roboSetParam(\'absenteismo\',this.value)" style="width:44px;font-size:9px;padding:2px"> %</span>'
     +'<span style="margin-left:auto;font-weight:400">Aderência por: <select onchange="roboSetAderBase(this.value)" style="font-size:9px;font-weight:700">'
     +['dia|Dia','semana|Semana','decorrido|Mês (decorrido)','mes|Mês (cheio)','tendencia|Tendência'].map(function(o){var kv=o.split('|');return '<option value="'+kv[0]+'" '+(aderBase===kv[0]?'selected':'')+'>'+kv[1]+'</option>'}).join('')
     +'</select>'
@@ -9366,7 +9390,7 @@ function execHTML(FA,con){
         +'</select>'):'')
     +'</span></div>'
     +'<div class="g g" style="grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:4px">'
-    +box('Previsto até aqui',_pc(esperadoPct)+'%','var(--cs)',duDecor+' de '+duTotal+' dias úteis · '+aderLabel)
+    +box('Previsto até aqui',_pc(esperadoPct)+'%','var(--cs)',duDecor+' de '+duTotal+' dias úteis'+(_absPct>0?(' · −'+_pc(_absPct)+'% absent.'):'')+' · '+aderLabel)
     +box('Realizado',_pc(realizadoPct)+'%','var(--gn)',h2hm(registradoRef)+' de '+h2hm(capMes))
     // ADERÊNCIA no formato "realizado% / previsto%" (o que o gestor quer bater o olho) + lupa para o motivo
     +'<div class="kp" onclick="roboIrDetalhe(\'relatorios\',\'analiseSemBatida\')" style="border-top:3px solid '+corA+';cursor:pointer" title="Aderência = realizado ÷ previsto. Clique para entender o motivo (quem não registrou horas / faltas).">'
@@ -9375,13 +9399,16 @@ function execHTML(FA,con){
       +'<div class="ks">realizado / previsto · <b style="color:'+corA+'">'+aprov+'% '+aderIco+'</b> · ver ›</div></div>'
     +box('Projeção fim do mês',projPct+'%',corP,h2hm(projMes)+' h no ritmo atual')
     +'</div>'
-    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">📅 <b>'+((FA&&FA.titulo&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'Período')+': '+duDecor+' de '+duTotal+' dias úteis decorridos = '+_pc(esperadoPct)+'% previsto</b>. Leitura: registramos <b>'+_pc(realizadoPct)+'%</b> do total do mês, de <b>'+_pc(esperadoPct)+'%</b> que era o esperado até hoje → aderência ao ritmo <b>'+aprov+'%</b>. No fim do mês fecha realizado% / 100%.</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">📅 <b>'+((FA&&FA.titulo&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'Período')+': '+duDecor+' de '+duTotal+' dias úteis decorridos = '+_pc(esperadoPct)+'% previsto'+(_absPct>0?(' (já com −'+_pc(_absPct)+'% de absenteísmo)'):'')+'</b>. Leitura: registramos <b>'+_pc(realizadoPct)+'%</b> do total do mês, de <b>'+_pc(esperadoPct)+'%</b> que era o esperado até hoje → aderência ao ritmo <b>'+aprov+'%</b>. No fim do mês fecha realizado% / '+_pc(100*_absFac)+'%.</div>'
     // HORAS A FATURAR + FINANCEIRO
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:6px 0 4px">💵 HORAS A FATURAR & ADERÊNCIA</div>'
     +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px">'
     +box('HN — Normal',h2hm(T.hn),'var(--cs)','faturável')
     +box('HE validada',h2hm(T.he50),'var(--gn)','reconhecida cliente',"roboSub('deacordo')")
-    +box('HE não recon.',h2hm(T.he50ap-T.he50),'var(--rd)','autorizar no De Acordo',"roboSub('deacordo')")
+    +(function(){var bruto=T.he50ap-T.he50, pr=(d.perdaReal!=null?d.perdaReal:bruto), buf=(d.perdaBuffer||0), prR=(d.perdaRealR$||0);
+      var tt='DISTORÇÃO REAL = o que a CBSI PAGA na folha e NÃO recebe do cliente. Cálculo: HE não reconhecida (bruto) '+h2hm(bruto)+' − buffer de 15min que a CBSI não paga (06:45-07:00 / 17:00-17:15 / sex 16:00-16:15) '+h2hm(buf)+' = '+h2hm(pr)+' ('+_brl(prR)+'). A tolerância absorvida (batida dentro dos 15min) nunca entrou aqui. Clique para tratar no De Acordo HE.';
+      return '<div class="kp" onclick="roboSub(\'deacordo\')" style="border-top:3px solid var(--rd);cursor:pointer" title="'+tt.replace(/"/g,'&quot;')+'"><div class="kl">Distorção real <span style="font-size:9px;color:var(--ca)">🔎</span></div><div class="kv" style="color:var(--rd);font-size:20px">'+h2hm(pr)+'</div><div class="ks">'+_brl(prR)+' · custo s/ receita · <span style="color:var(--ca);font-weight:700">ver ›</span></div></div>';
+    })()
     +box('Custo / Receita',d.receita>0?d.relacao.toFixed(0)+'%':'—',cor,_brl(d.custo.total)+' / '+_brl(d.receita),"roboIrDetalhe('relatorios','analiseExcecao')")
     +box('Situação',verd.replace(/^[^ ]+ /,''),cor,' ',"roboIrDetalhe('relatorios','analiseExcecao')")
     +'</div>'
@@ -9813,8 +9840,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=99;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='99 · 07/08/2026 · Aderência: escolher DIA específico (18, 19…) e SEMANA (1,2,3,4) do período, não só o último';
+var CBSI_VER=100;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='100 · 07/08/2026 · Previsto com −5% absenteísmo (100→95%) editável + DISTORÇÃO REAL (HE que a CBSI paga e não recebe, buffer 15min deduzido) no lugar do bruto não reconhecido';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
