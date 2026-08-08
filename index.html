@@ -8974,7 +8974,7 @@ function analiseDados(FA){
   function jout(dow){return normTxt(dow)==='SEX'?(+P.heJoutSex||16):(+P.heJoutSegQui||17)}
   function ov(x1,x2,y1,y2){return Math.max(0,Math.min(x2,y2)-Math.max(x1,y1))}
   var T={hn:0,he50ap:0,he50:0,he100:0,he150:0,adn:0,dias:0,exAntes:0,exApos:0,
-    hnAp:0,he100ap:0,he150ap:0,adnAp:0,tolAntes:0,tolApos:0,diasTol:0,perdaBuffer:0,faltaH:0,atestH:0};
+    hnAp:0,he100ap:0,he150ap:0,adnAp:0,tolAntes:0,tolApos:0,diasTol:0,perdaBuffer:0,faltaH:0,atestH:0,semBatidaH:0};
   var byC={};
   regs.forEach(function(l){
     T.hn+=(+l.hn||0);T.he50ap+=(+l.he50ap||0);T.he50+=(+l.he50||0);T.he100+=(+l.he100||0);T.he150+=(+l.he150||0);T.adn+=(+l.adn||0);
@@ -8985,7 +8985,7 @@ function analiseDados(FA){
     T.adnAp+=((+l.adnAp!=null&&l.adnAp!=='')?+l.adnAp:(+l.adn||0));
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
-    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,manualPend:0,atestado:0,falta:0,faltaH:0,atestH:0,dias:0,tolAntes:0,tolApos:0,diasTol:0,mobiliza:0,mobUlt:''};
+    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,semBatidaH:0,manualPend:0,atestado:0,falta:0,faltaH:0,atestH:0,dias:0,tolAntes:0,tolApos:0,diasTol:0,mobiliza:0,mobUlt:''};
     c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
     // ATESTADO / FALTA: o marcador vem no texto do espelho (campo ct), não no obs.
     var _o=String((l.obs||'')+' '+(l.phtd||'')+' '+(l.ct||''));
@@ -9029,7 +9029,8 @@ function analiseDados(FA){
       if(_mob){c.mobiliza++;if(l.data)c.mobUlt=l.data;}
       // cargo de confiança (supervisor/coordenador/gerente/eng. segurança) NÃO bate ponto:
       // dia sem batida vira "aguardando ponto manual" (fonte = pasta PONTO MANUAL), não "sem apontamento".
-      else if(c.confianca)c.manualPend++;else c.semBatida++;
+      else if(c.confianca)c.manualPend++;
+      else {var _js=(dN==='SEX')?8:9; c.semBatida++; c.semBatidaH+=_js; T.semBatidaH+=_js;}
     }
   });
   var ch=custoHoraEfetivo();
@@ -9190,10 +9191,13 @@ function analiseHTML(FA,con){
     +'</table></div>'
     +'<div style="font-size:7px;color:var(--dm);margin-top:3px">Essas horas foram <b>trabalhadas</b> mas, pela regra dos '+tolMin+' min por lado, <b>não geram HE</b> — logo não entram em custo nem recebível. É um bucket <b>separado</b> da HE não reconhecida ('+h2hm(cortada)+'), que é apurada acima da tolerância e não autorizada no De Acordo.</div></details>';
   // SEM BATIDA (perdidos na área) — sempre renderiza (id fixo p/ o link da Visão Executiva)
-  h+='<details style="margin-top:4px"'+(sbList.length?' open':'')+' id="analiseSemBatida"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--rd)">⚠️ Colaboradores com dias sem batida em dia útil (sem apontamento → não fatura) — '+sbList.length+'</summary>'
-    +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
-    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Dias sem batida</th></tr>'
-    +(sbList.length?sbList.map(function(c){return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td></tr>'}).join(''):'<tr><td colspan="4" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum colaborador sem apontamento no período.</td></tr>')
+  var _sbH=0;sbList.forEach(function(c){_sbH+=(+c.semBatidaH||0)});
+  h+='<details style="margin-top:4px"'+(sbList.length?' open':'')+' id="analiseSemBatida"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--rd)">⚠️ Dias sem batida em dia útil — horas que não faturam ('+h2hm(_sbH)+' · '+sbList.length+' pessoa'+(sbList.length===1?'':'s')+')</summary>'
+    +'<div style="font-size:7px;color:var(--dm);margin-top:3px">🔴 <b>"Sem apontamento"</b> (nunca produziu no período) entra na cabeça do Efetivo. Quem <b>produziu mas faltou batida em alguns dias</b> conta como <b>Produzindo</b> na cabeça — aqui aparecem só as <b>horas</b> desses dias (não fatura). Horas = dias sem batida × jornada (9h/8h).</div>'
+    +'<div style="max-height:220px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Situação</th><th>Dias s/ batida</th><th>Horas</th></tr>'
+    +(sbList.length?sbList.map(function(c){var prod=(c.dias||0)>0;return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:700;color:'+(prod?'var(--gn)':'var(--rd)')+'">'+(prod?'produziu (parcial)':'nunca produziu')+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+h2hm(c.semBatidaH||0)+'</td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum dia sem batida no período.</td></tr>')
+    +'<tr style="background:var(--c1);font-weight:800"><td style="text-align:left;padding:3px" colspan="4">TOTAL horas sem batida</td><td style="text-align:center">'+sbList.reduce(function(a,c){return a+(c.semBatida||0)},0)+'</td><td style="text-align:center;color:var(--rd)">'+h2hm(_sbH)+'</td></tr>'
     +'</table></div></details>';
   // AGUARDANDO PONTO MANUAL — cargos de confiança (não batem ponto; fonte = pasta PONTO MANUAL do mês)
   h+='<details style="margin-top:4px" id="analiseManualPend"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--co)">🖋 Aguardando ponto manual — cargos de confiança sem card no período ('+mpList.length+') <span style="font-weight:400;color:var(--dm)">— não são "sem apontamento"; a fonte é a pasta PONTO MANUAL</span></summary>'
@@ -9305,18 +9309,27 @@ window.roboIrDetalhe=function(sub,elId){
 function execHTML(FA,con){
   var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS,regs=(FA&&FA.regs)?FA.regs:[];
   var efetTotal=(typeof ROBO_EFET!=='undefined'&&ROBO_EFET)?ROBO_EFET.length:Object.keys(d.byC).length;
-  var presentes=Object.keys(d.byC).filter(function(k){return d.byC[k].dias>0}).length;
-  // ABSENTEÍSMO (faltas + atestados) — detectado do texto do espelho (ct), medido em HORAS.
+  // ===== VISÃO HOLÍSTICA: STATUS ÚNICO POR PESSOA (mutuamente exclusivo, soma = nº que aparece no período) =====
+  // Prioridade: Produzindo (trabalhou ≥1 dia) > Em mobilização > Ponto manual (confiança) > Sem apontamento.
+  // Assim ninguém é contado em duas caixinhas e cada ajuste reflete nas demais.
+  var pProd=0,pMob=0,pMan=0,pSem=0;
+  Object.keys(d.byC).forEach(function(k){var c=d.byC[k];
+    if((c.dias||0)>0)pProd++;
+    else if((c.mobiliza||0)>0)pMob++;
+    else if((c.manualPend||0)>0||c.confianca)pMan++;
+    else pSem++;
+  });
+  var noPeriodo=Object.keys(d.byC).length;      // universo = todos que aparecem no período
+  var presentes=pProd;                           // "Produzindo" alimenta a capacidade
+  var mobil=pMob, manPend=pMan, semAp=pSem;
+  var semCad=Object.keys(d.byC).filter(function(k){return /SEM\s*CADASTRO/i.test(String(d.byC[k].cargo||''))}).length;
+  // OVERLAYS EM HORAS (qualidade das horas — não são cabeça, não fatura):
   var nAtest=Object.keys(d.byC).filter(function(k){return (d.byC[k].atestado||0)>0}).length;
   var nFalta=Object.keys(d.byC).filter(function(k){return (d.byC[k].falta||0)>0}).length;
   var nAbsPes=Object.keys(d.byC).filter(function(k){return (d.byC[k].atestado||0)+(d.byC[k].falta||0)>0}).length;
   var absHoras=(+T.faltaH||0)+(+T.atestH||0);
-  var semAp=Object.keys(d.byC).filter(function(k){return d.byC[k].semBatida>0}).length;
-  var manPend=Object.keys(d.byC).filter(function(k){return (d.byC[k].manualPend||0)>0}).length;
-  // EM MOBILIZAÇÃO: tem apontamento de mobilização (Treinamento/Aguardando Crachá/Integração/ADMC)
-  // e ainda NÃO iniciou produção no período (nenhum dia trabalhado) → "estão em mobilização".
-  var mobil=Object.keys(d.byC).filter(function(k){return (d.byC[k].mobiliza||0)>0 && (d.byC[k].dias||0)===0}).length;
-  var faltantes=Math.max(0,efetTotal-presentes);
+  var semBatidaH=(+T.semBatidaH||0);
+  var nSemBatidaDias=Object.keys(d.byC).filter(function(k){return (d.byC[k].semBatida||0)>0}).length; // pessoas com ALGUM dia sem batida (inclui produzindo)
   var capH=(+P.capHorasMes||184);
   var capTotal=efetTotal*capH, capPres=presentes*capH;
   var registrado=0;regs.forEach(function(l){registrado+=(+l.trab||0)});
@@ -9399,15 +9412,21 @@ function execHTML(FA,con){
   }
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
     +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:6px">📊 VISÃO EXECUTIVA — '+((FA&&FA.titulo)||'período')+' <span style="font-size:8px;font-weight:400;color:var(--dm)">· clique nas caixas com 🔎 para ver quem é e tratar</span></div>'
-    // EFETIVO
-    +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">👥 EFETIVO</div>'
-    +'<div class="g g" style="grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:8px">'
-    +box('Cadastrado',String(efetTotal),'var(--cs)','no efetivo')
-    +box('Presentes',String(presentes),'var(--gn)','com apontamento')
-    +box('Faltas / Atestados',h2hm(absHoras),absHoras>0?'var(--co)':'var(--gn)',(nFalta+' falta'+(nFalta===1?'':'s')+' · '+nAtest+' atest. · '+nAbsPes+' pessoa'+(nAbsPes===1?'':'s')+' — absenteísmo'),"roboIrDetalhe('relatorios','analiseAtestado')")
+    // EFETIVO — status único por pessoa (reconcilia: soma das 4 caixinhas = pessoas no período)
+    +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">👥 EFETIVO — status único por pessoa (soma reconcilia)</div>'
+    +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:4px">'
+    +box('No período',String(noPeriodo),'var(--cs)',efetTotal+' no cadastro RH'+(semCad>0?(' · '+semCad+' sem cadastro'):''))
+    +box('Produzindo',String(pProd),'var(--gn)','trabalhou ≥1 dia',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +box('Em mobilização',String(mobil),mobil>0?'var(--ca)':'var(--gn)','treinamento/crachá',"roboIrDetalhe('relatorios','analiseMobilizacao')")
     +box('Ponto manual',String(manPend),manPend>0?'var(--co)':'var(--gn)','confiança — aguardando card',"roboIrDetalhe('relatorios','analiseManualPend')")
-    +box('Em mobilização',String(mobil),mobil>0?'var(--ca)':'var(--gn)','treinamento/crachá — não fatura',"roboIrDetalhe('relatorios','analiseMobilizacao')")
-    +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','não bate — não fatura',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','nunca produziu — não fatura',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +'</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">🧮 <b>'+noPeriodo+' no período</b> = '+pProd+' produzindo + '+mobil+' mobilização + '+manPend+' ponto manual + '+semAp+' sem apontamento. Cada pessoa em <b>um</b> status só. Cadastro RH: '+efetTotal+(semCad>0?(' · '+semCad+' aparecem no espelho sem cadastro (novatos)'):'')+'.</div>'
+    // OVERLAYS EM HORAS — não são cabeça; são horas que não faturam (sobre os produzindo/ausentes)
+    +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">⏱ HORAS QUE NÃO FATURAM (absenteísmo — overlay, não conta cabeça de novo)</div>'
+    +'<div class="g g" style="grid-template-columns:repeat(2,1fr);gap:5px;margin-bottom:8px">'
+    +box('Faltas / Atestados',h2hm(absHoras),absHoras>0?'var(--co)':'var(--gn)',(nFalta+' falta'+(nFalta===1?'':'s')+' · '+nAtest+' atest. · '+nAbsPes+' pessoa'+(nAbsPes===1?'':'s')),"roboIrDetalhe('relatorios','analiseAtestado')")
+    +box('Sem batida',h2hm(semBatidaH),semBatidaH>0?'var(--rd)':'var(--gn)',(nSemBatidaDias+' pessoa'+(nSemBatidaDias===1?'':'s')+' com dia sem registro × jornada'),"roboIrDetalhe('relatorios','analiseSemBatida')")
     +'</div>'
     // CAPACIDADE DE HORAS
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">⏱ CAPACIDADE DE HORAS — <span style="font-weight:400">capacidade/colab no mês: <input type="number" min="1" value="'+capH+'" onchange="roboSetParam(\'capHorasMes\',this.value)" style="width:52px;font-size:9px;padding:2px"> h</span>'
@@ -9864,8 +9883,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=104;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='104 · 07/08/2026 · Card único FALTAS/ATESTADOS em HORAS (absenteísmo), lido do campo ct do espelho (corrige detecção que lia obs vazio) · remove "Faltantes" (cadastro−presente) sem critério · drill em horas';
+var CBSI_VER=105;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='105 · 08/08/2026 · EFETIVO holístico: status ÚNICO por pessoa (Produzindo/Mobilização/Ponto manual/Sem apontamento) que soma o total do período (103), sem dupla contagem · Faltas/Atestados e Sem batida viram HORAS (overlay)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
