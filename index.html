@@ -9739,6 +9739,26 @@ if(typeof window.renderPonto==='function'){
   var _rpOrig=window.renderPonto;
   window.renderPonto=function(){_rpOrig();try{fixMetricasJornada()}catch(e){}try{renderRobo()}catch(e){console.warn('Robo:',e)}};
 }
+// REGRA: ao ABRIR a aba Espelho de Ponto, sempre cair na VISÃO EXECUTIVA (o painel executivo).
+// A partir daí o usuário navega livremente nas outras sub-abas. As páginas da base ligam/desligam
+// pela classe "on" (.pg.on = visível); então detecto o momento em que p-ponto ganha "on" (abertura
+// real da aba) e forço a sub-aba 'exec'. NÃO uso renderPonto porque ele também roda em ações internas
+// (De Acordo HE, ajustes) — o que jogaria o usuário para fora da sub-aba onde está trabalhando.
+(function forcarExecAoAbrirPonto(){
+  function setup(){
+    var pg=document.getElementById('p-ponto'); if(!pg){setTimeout(setup,700);return;}
+    if(pg._execObs)return; pg._execObs=1;
+    var estavaOn=pg.classList.contains('on');
+    var obs=new MutationObserver(function(){
+      var on=pg.classList.contains('on');
+      if(on&&!estavaOn){ ROBO_SUB='exec'; try{lss('cbsi-v15-robo-sub','exec')}catch(e){} try{window.roboSub('exec')}catch(e){} }
+      estavaOn=on;
+    });
+    obs.observe(pg,{attributes:true,attributeFilter:['class']});
+  }
+  if(document.body)setup();else document.addEventListener('DOMContentLoaded',setup);
+  setTimeout(setup,2500);
+})();
 
 // ---------------------------------------------------------------------------
 // ABA 🏗️ PROJETOS ANDAIMES (nova página, mesma lógica das demais)
@@ -9987,8 +10007,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=107;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='107 · 08/08/2026 · QUADRO RESUMO — sub-aba consolidadora de todos os grupos (pessoas + horas: tolerância 15min, sem validação cliente, buffer, distorção real, absenteísmo, sem batida…), cada linha com descrição e 🔎 → detalhe (fonte)';
+var CBSI_VER=108;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='108 · 08/08/2026 · Ao abrir a aba Espelho de Ponto, sempre cai na VISÃO EXECUTIVA (painel executivo); a partir daí o usuário navega nas demais sub-abas. Não afeta ações internas (De Acordo/ajustes)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
