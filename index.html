@@ -9495,8 +9495,8 @@ function execHTML(FA,con){
         +'</select>'):'')
     +'</span></div>'
     +'<div class="g g" style="grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:6px">'
-    +boxB('Previsto até aqui',_pc(esperadoPct)+'%','var(--cs)',duDecor+' de '+duTotal+' dias úteis'+(_absPct>0?(' · −'+_pc(_absPct)+'% absent.'):'')+' · '+aderLabel)
-    +boxB('Realizado',_pc(realizadoPct)+'%','var(--gn)',h2hm(registradoRef)+' de '+h2hm(capMes))
+    +boxB('Meta de horas (previsto)',h2hm(capRefAj),'var(--cs)',_pc(esperadoPct)+'% da capacidade'+(_absPct>0?(' (−'+_pc(_absPct)+'% absent.)'):'')+' · '+duDecor+'/'+duTotal+' dias · '+aderLabel)
+    +boxB('Realizado',h2hm(registradoRef),'var(--gn)',_pc(realizadoPct)+'% · de '+h2hm(capMes)+' cheio')
     // ADERÊNCIA no formato "realizado% / previsto%" (o que o gestor quer bater o olho) + lupa para o motivo
     +'<div class="kp" onclick="roboIrDetalhe(\'relatorios\',\'analiseSemBatida\')" style="border-top:4px solid '+corA+';cursor:pointer;padding:16px 14px;min-height:86px;display:flex;flex-direction:column;justify-content:center" title="Aderência = realizado ÷ previsto. Clique para entender o motivo (quem não registrou horas / faltas).">'
       +'<div class="kl" style="font-size:11px;letter-spacing:.3px">Aderência ao período <span style="font-size:10px;color:var(--ca)">🔎</span></div>'
@@ -9526,8 +9526,13 @@ function execHTML(FA,con){
         +'<tr style="background:var(--c1);font-weight:800"><th style="text-align:left;padding:6px 10px">Grupo de horas</th><th style="text-align:right">Horas (BM)</th><th style="text-align:right;padding-right:10px">Receita R$</th><th style="text-align:right;padding-right:10px">% da receita</th></tr>'
         +linhas.map(function(l){return '<tr style="border-top:1px solid var(--bd)"><td style="text-align:left;padding:5px 10px;font-weight:700;color:'+l[2]+'">'+l[0]+'</td><td style="text-align:right">'+h2hm(+l[1].q||0)+'</td><td style="text-align:right;padding-right:10px;font-weight:700;color:var(--gn)">'+_brl(+l[1].v||0)+'</td><td style="text-align:right;padding-right:10px;color:var(--dm)">'+pct(+l[1].v||0)+'</td></tr>'}).join('')
         +'<tr style="border-top:2px solid var(--bd);background:rgba(0,196,140,.06);font-weight:800"><td style="text-align:left;padding:6px 10px">TOTAL (Normais + Extras)</td><td style="text-align:right">'+h2hm(totQ)+'</td><td style="text-align:right;padding-right:10px;color:var(--gn)">'+_brl(totV)+'</td><td style="text-align:right;padding-right:10px">100%</td></tr>'
+        // LINHA MEMO — PERDA DE RECEITA (distorção): horas de distorção × valor da hora normal (não faturado)
+        +(function(){var puHN=((+tr.hn.q||0)>0)?((+tr.hn.v||0)/(+tr.hn.q||1)):0; var perdaH=(+d.perdaReal||0); var perdaRec=perdaH*puHN;
+          return '<tr style="border-top:1px solid var(--bd);background:rgba(255,71,87,.07)"><td style="text-align:left;padding:6px 10px;font-weight:700;color:var(--rd)">⚠️ Perda de receita (distorção)</td><td style="text-align:right;color:var(--rd)">'+h2hm(perdaH)+'</td><td style="text-align:right;padding-right:10px;font-weight:800;color:var(--rd)">− '+_brl(perdaRec)+'</td><td style="text-align:right;padding-right:10px;color:var(--dm);font-size:8px">× '+_brl(puHN)+'/h (HN)</td></tr>';
+        })()
         +'</table></div>'
-        +'<div style="font-size:7px;color:var(--dm);margin-top:3px">Só Extras (HE 50+100+150+ADN): <b>'+h2hm(extraQ)+' · '+_brl(extraV)+'</b> · Só Normais: <b>'+h2hm(+tr.hn.q||0)+' · '+_brl(+tr.hn.v||0)+'</b>. Horas e receita do <b>BM aprovado</b> (o que efetivamente gera receita — pode diferir do apurado do ponto nos cards acima). '+(totV<=0?'⚠️ Sem BM da competência carregado.':'')+'</div>';
+        +'<div style="font-size:7px;color:var(--dm);margin-top:3px">Só Extras (HE 50+100+150+ADN): <b>'+h2hm(extraQ)+' · '+_brl(extraV)+'</b> · Só Normais: <b>'+h2hm(+tr.hn.q||0)+' · '+_brl(+tr.hn.v||0)+'</b>. Horas e receita do <b>BM aprovado</b> (o que efetivamente gera receita — pode diferir do apurado do ponto nos cards acima). '+(totV<=0?'⚠️ Sem BM da competência carregado.':'')+'</div>'
+        +'<div style="font-size:7px;color:var(--rd);margin-top:2px">⚠️ <b>Perda de receita (distorção)</b> = horas de distorção real ('+h2hm(+d.perdaReal||0)+') × valor da hora normal do BM. É o que você <b>deixou de faturar</b> (pagou na folha e não recebeu). NÃO entra no total acima (é receita não realizada).</div>';
     })()
     +'<div style="font-size:7px;color:var(--dm);margin-top:5px">Custo × receita e situação de aderência agora ficam na sub-aba <b>Relatórios</b> (com ajuste de custo-hora e receita). "Sem apontamento" e exceções também em Relatórios. Efetivo cadastrado vem do Cadastro de Efetivos ('+efetTotal+').</div>'
     +'</div>';
@@ -10022,8 +10027,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=109;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='109 · 08/08/2026 · Tabela RECEITA POR GRUPO DE HORAS na Visão Executiva: HN / HE 50 / 100 / 150 / ADN — horas e R$ que cada grupo gera (do BM aprovado) + total Normais+Extras e % da receita';
+var CBSI_VER=110;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='110 · 08/08/2026 · Card "Meta de horas (previsto)" mostra a capacidade prevista em HORAS (95%) e Realizado em horas · linha PERDA DE RECEITA (distorção × valor da hora normal) na tabela de receita';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
