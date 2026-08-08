@@ -6070,6 +6070,11 @@ function bmItemDe(func,tipo){
 // ---------------------------------------------------------------------------
 var ROBO_LANC=lsg('cbsi-v15-robo-lanc',[]);      // [{ref,per,data,dow,phtd,id,mat,nome,cargo,funcQQP,hn,he50,he100,he150,adn,trab,obs,arq}]
 var ROBO_ARQS=lsg('cbsi-v15-robo-arqs',[]);      // [{nome,quando,colabs,dias,ref}]
+// CLASSIFICAÇÃO MANUAL do gestor para colaboradores em dia útil sem batida (que o espelho não explica):
+// {idColaborador: 'ferias'|'afast'|'falta_inj'|'esqueceu'|'aguard'|'outros'}. Roteia cada um para a caixa certa.
+var ROBO_CLASS=lsg('cbsi-v15-efet-class',{});
+var CLASS_ROTULOS={ferias:'Férias',afast:'Afastamento/Licença',falta_inj:'Falta injustificada',esqueceu:'Esqueceu de bater ponto',aguard:'Aguardando atestado',outros:'Outros'};
+window.roboSetClass=function(id,v){id=String(id==null?'':id);if(!v||v==='-')delete ROBO_CLASS[id];else ROBO_CLASS[id]=v;lss('cbsi-v15-efet-class',ROBO_CLASS);renderRobo()};
 function roboSave(){lss('cbsi-v15-robo-lanc',ROBO_LANC);lss('cbsi-v15-robo-arqs',ROBO_ARQS);lss('cbsi-v15-robo-depara',ROBO_DEPARA);lss('cbsi-v15-robo-efet',ROBO_EFET)}
 
 // ---------------------------------------------------------------------------
@@ -6598,6 +6603,8 @@ function roboProcessarPdf(file,statusEl){
     //  (b) pela PASTA/NOME — arquivo dentro de uma pasta "PONTO MANUAL" (Drive) ou nome começando com "PONTO MANUAL".
     //      Assim, é só largar o card na pasta PONTO MANUAL do mês que o sistema já trata como manual.
     var manualPorPasta=/MANUAL/i.test(String(file._pasta||''))||/^\s*PONTO\s*MANUAL/i.test(String(file.name||''));
+    // FÉRIAS: arquivo dentro de uma pasta "FÉRIAS" (ou nome começando com FÉRIAS) → marca os dias como Férias.
+    var feriasPorPasta=/F[ÉE]RIAS/i.test(String(file._pasta||''))||/^\s*F[ÉE]RIAS/i.test(String(file.name||''));
     if(manualPorPasta||lines.some(function(l){return /CART[ÃA]O PONTO MANUAL/i.test(l)})){
       return processarManual(lines,file,statusEl);
     }
@@ -6626,7 +6633,7 @@ function roboProcessarPdf(file,statusEl){
           if(c.trab<=0&&c.he150<=0)return;
           ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.phtd==='MAN'&&l.data===d.data&&(l.id===b.id||normTxt(l.nome)===nomeN))});
         }
-        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he50ap:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; '),arq:file.name,
+        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he50ap:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; ')+(feriasPorPasta?' · Ferias':''),arq:file.name,
           mk:d.marcas.join('|'),ct:d.contas.map(function(x){return x.t+'~'+x.v}).join(';')});
       });
       novos++;
@@ -8985,11 +8992,12 @@ function analiseDados(FA){
     T.adnAp+=((+l.adnAp!=null&&l.adnAp!=='')?+l.adnAp:(+l.adn||0));
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
-    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,semBatidaH:0,manualPend:0,atestado:0,falta:0,faltaH:0,atestH:0,dias:0,tolAntes:0,tolApos:0,diasTol:0,mobiliza:0,mobUlt:''};
+    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,semBatidaH:0,manualPend:0,atestado:0,falta:0,faltaH:0,atestH:0,feriasDias:0,dias:0,tolAntes:0,tolApos:0,diasTol:0,mobiliza:0,mobUlt:''};
     c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
-    // ATESTADO / FALTA: o marcador vem no texto do espelho (campo ct), não no obs.
+    // ATESTADO / FALTA / FÉRIAS: o marcador vem no texto do espelho (ct) ou no obs (ex.: "PONTO MANUAL · Ferias").
     var _o=String((l.obs||'')+' '+(l.phtd||'')+' '+(l.ct||''));
     var _isAtest=/ATESTADO/i.test(_o), _isFalta=/FALTA|AUSENC/i.test(_o);
+    if(/F[ÉE]RIAS/i.test(_o))c.feriasDias++;
     if(_isAtest)c.atestado++;else if(_isFalta)c.falta++;
     // HORAS de ausência (absenteísmo) = jornada do dia − horas trabalhadas (dia inteiro faltado = jornada; meio expediente = o que faltou)
     if(_isAtest||_isFalta){
@@ -9021,7 +9029,7 @@ function analiseDados(FA){
           T.perdaBuffer+=bufDia*fracNR;
         }
       }
-    }else if((+l.trab||0)===0 && ['SEG','TER','QUA','QUI','SEX'].indexOf(dN)>=0 && !/DOM|SAB|F[ÉE]RIAS|FERIAS|DSR|FOLGA|ATESTADO|FALTA|LICEN|AFASTAD|COMP/i.test(String((l.obs||'')+' '+(l.phtd||'')))){
+    }else if((+l.trab||0)===0 && ['SEG','TER','QUA','QUI','SEX'].indexOf(dN)>=0 && !/DOM|SAB|F[ÉE]RIAS|FERIAS|DSR|FOLGA|ATESTADO|FALTA|LICEN|AFASTAD|COMP/i.test(String((l.obs||'')+' '+(l.phtd||'')+' '+(l.ct||'')))){
       // MOBILIZAÇÃO: o espelho aponta o dia como Treinamento / Aguardando Libera Crachá / Integração
       // (campo ct) ou o código ADMC (admissão). Entre admissão e fim do treinamento do cliente o
       // colaborador NÃO bate ponto (~30 dias). NÃO é "sem apontamento" — é etapa de mobilização.
@@ -9030,7 +9038,14 @@ function analiseDados(FA){
       // cargo de confiança (supervisor/coordenador/gerente/eng. segurança) NÃO bate ponto:
       // dia sem batida vira "aguardando ponto manual" (fonte = pasta PONTO MANUAL), não "sem apontamento".
       else if(c.confianca)c.manualPend++;
-      else {var _js=(dN==='SEX')?8:9; c.semBatida++; c.semBatidaH+=_js; T.semBatidaH+=_js;}
+      else {
+        // CLASSIFICAÇÃO MANUAL do gestor manda: férias/afastamento/aguardando atestado são EXCUSADOS
+        // (não contam como "sem batida" nem geram hora perdida). Falta injust./esqueceu/outros/sem classificar seguem contando.
+        var _cls=ROBO_CLASS[String(id)];
+        if(_cls==='ferias')c.feriasDias++;
+        else if(_cls==='afast'||_cls==='aguard'){/* excusado — não conta como sem batida */}
+        else {var _js=(dN==='SEX')?8:9; c.semBatida++; c.semBatidaH+=_js; T.semBatidaH+=_js;}
+      }
     }
   });
   var ch=custoHoraEfetivo();
@@ -9066,6 +9081,15 @@ function analiseHTML(FA,con){
   var atList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.atestado||0)+(c.falta||0)>0}).sort(function(x,y){return ((y.atestado||0)+(y.falta||0))-((x.atestado||0)+(x.falta||0))});
   var mpList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.manualPend||0)>0}).sort(function(x,y){return (y.manualPend||0)-(x.manualPend||0)});
   var mobList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return (c.mobiliza||0)>0}).sort(function(x,y){return (y.mobiliza||0)-(x.mobiliza||0)});
+  // FÉRIAS (pasta/obs ou classificação manual) e SEM APONTAMENTO (dias=0 que caem em "sem apontamento" — recebem o seletor de motivo)
+  var feriasList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){return ROBO_CLASS[String(c.id)]==='ferias'||(c.feriasDias||0)>0}).sort(function(x,y){return (y.feriasDias||0)-(x.feriasDias||0)});
+  var semApList=Object.keys(d.byC).map(function(k){return d.byC[k]}).filter(function(c){
+    if((c.dias||0)>0)return false;
+    if(ROBO_CLASS[String(c.id)]==='ferias'||(c.feriasDias||0)>0)return false;
+    if((c.mobiliza||0)>0)return false;
+    if((c.manualPend||0)>0||c.confianca)return false;
+    return true;
+  }).sort(function(x,y){return (y.semBatida||0)-(x.semBatida||0)});
   var cor=d.receita<=0?'var(--dm)':(d.relacao>=100?'var(--rd)':(d.relacao>=d.alvo?'#c9a000':'var(--gn)'));
   var verd=d.receita<=0?'informe a receita p/ avaliar':(d.relacao>=100?'🔴 NÃO ADERENTE — custo ≥ receita':(d.relacao>=d.alvo?'🟡 ATENÇÃO — acima do alvo':'🟢 ADERENTE'));
   function kp(l,v,c,s){return '<div class="kp" style="border-top:2px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+'">'+v+'</div>'+(s?'<div class="ks">'+s+'</div>':'')+'</div>';}
@@ -9198,6 +9222,24 @@ function analiseHTML(FA,con){
     +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Situação</th><th>Dias s/ batida</th><th>Horas</th></tr>'
     +(sbList.length?sbList.map(function(c){var prod=(c.dias||0)>0;return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+c.func+'</td><td style="text-align:center;font-weight:700;color:'+(prod?'var(--gn)':'var(--rd)')+'">'+(prod?'produziu (parcial)':'nunca produziu')+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+c.semBatida+'</td><td style="text-align:center;font-weight:800;color:var(--rd)">'+h2hm(c.semBatidaH||0)+'</td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;padding:8px;color:var(--gn)">✅ Nenhum dia sem batida no período.</td></tr>')
     +'<tr style="background:var(--c1);font-weight:800"><td style="text-align:left;padding:3px" colspan="4">TOTAL horas sem batida</td><td style="text-align:center">'+sbList.reduce(function(a,c){return a+(c.semBatida||0)},0)+'</td><td style="text-align:center;color:var(--rd)">'+h2hm(_sbH)+'</td></tr>'
+    +'</table></div>'
+    // SELETOR DE CLASSIFICAÇÃO — o gestor marca o motivo de cada "sem apontamento" e a pessoa vai pra caixa certa
+    +'<div style="font-size:8px;font-weight:800;color:var(--cs);margin:8px 0 3px">🏷️ Classificar os "sem apontamento" ('+semApList.length+') — escolha o motivo e a pessoa vai para a caixa certa</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-bottom:3px">O espelho não explica esses dias em branco. Marque o motivo: <b>Férias</b> tira da conta (vira card Férias). Os demais motivos ficam <u>documentados</u> aqui e no cabeçalho (por enquanto seguem em "sem apontamento" até virar card próprio, se você quiser).</div>'
+    +'<div style="max-height:240px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Dias</th><th style="text-align:left">Classificar motivo</th></tr>'
+    +(semApList.length?semApList.map(function(c){
+        var cur=ROBO_CLASS[String(c.id)]||'';
+        var opts=[['','—'],['ferias','Férias'],['falta_inj','Falta injustificada'],['esqueceu','Esqueceu de bater ponto'],['aguard','Aguardando atestado'],['afast','Afastamento/Licença'],['outros','Outros']];
+        var sel='<select onchange="roboSetClass(\''+_escC(c.id)+'\',this.value)" style="font-size:9px;font-weight:700;padding:2px">'+opts.map(function(o){return '<option value="'+o[0]+'" '+(cur===o[0]?'selected':'')+'>'+o[1]+'</option>'}).join('')+'</select>';
+        return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'(sem cadastro)')+'</td><td style="text-align:left;color:var(--dm)">'+(c.func||'—')+'</td><td style="text-align:center;font-weight:700;color:var(--rd)">'+(c.semBatida||0)+'</td><td style="text-align:left">'+sel+'</td></tr>';
+      }).join(''):'<tr><td colspan="5" style="text-align:center;padding:8px;color:var(--gn)">✅ Ninguém sem apontamento a classificar.</td></tr>')
+    +'</table></div></details>';
+  // FÉRIAS — pasta de férias (ou classificação manual)
+  h+='<details style="margin-top:4px" id="analiseFerias"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:#7c4dff">🏖️ Colaboradores em férias ('+feriasList.length+') <span style="font-weight:400;color:var(--dm)">— não são "sem apontamento"; fonte: pasta FÉRIAS no Drive ou classificação manual</span></summary>'
+    +'<div style="max-height:200px;overflow:auto;margin-top:4px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+    +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Colaborador</th><th style="text-align:left">Matr.</th><th style="text-align:left">Função</th><th>Dias de férias</th><th>Situação</th><th style="text-align:left">Fonte</th></tr>'
+    +(feriasList.length?feriasList.map(function(c){var manual=ROBO_CLASS[String(c.id)]==='ferias';var full=(c.dias||0)===0;return '<tr style="border-bottom:1px solid var(--bd)">'+_nomeLink(c)+'<td style="text-align:left;color:var(--dm)">'+(c.mat||'')+'</td><td style="text-align:left;color:var(--dm)">'+(c.func||c.cargo||'—')+'</td><td style="text-align:center;font-weight:800;color:#7c4dff">'+(c.feriasDias||0)+'</td><td style="text-align:center;font-weight:700;color:'+(full?'#7c4dff':'var(--gn)')+'">'+(full?'férias (período)':'produziu + tirou dias')+'</td><td style="text-align:left;color:var(--dm)">'+(c.feriasDias>0?'espelho/pasta':'')+(manual?(c.feriasDias>0?' + ':'')+'classif. manual':'')+'</td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;padding:8px;color:var(--dm)">Nenhum colaborador em férias no período. Coloque a lista/card na pasta <b>FÉRIAS</b> do mês no Drive, ou classifique manualmente na tabela acima.</td></tr>')
     +'</table></div></details>';
   // AGUARDANDO PONTO MANUAL — cargos de confiança (não batem ponto; fonte = pasta PONTO MANUAL do mês)
   h+='<details style="margin-top:4px" id="analiseManualPend"><summary style="cursor:pointer;font-size:9px;font-weight:700;color:var(--co)">🖋 Aguardando ponto manual — cargos de confiança sem card no período ('+mpList.length+') <span style="font-weight:400;color:var(--dm)">— não são "sem apontamento"; a fonte é a pasta PONTO MANUAL</span></summary>'
@@ -9310,18 +9352,26 @@ function execHTML(FA,con){
   var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS,regs=(FA&&FA.regs)?FA.regs:[];
   var efetTotal=(typeof ROBO_EFET!=='undefined'&&ROBO_EFET)?ROBO_EFET.length:Object.keys(d.byC).length;
   // ===== VISÃO HOLÍSTICA: STATUS ÚNICO POR PESSOA (mutuamente exclusivo, soma = nº que aparece no período) =====
-  // Prioridade: Produzindo (trabalhou ≥1 dia) > Em mobilização > Ponto manual (confiança) > Sem apontamento.
-  // Assim ninguém é contado em duas caixinhas e cada ajuste reflete nas demais.
-  var pProd=0,pMob=0,pMan=0,pSem=0;
-  Object.keys(d.byC).forEach(function(k){var c=d.byC[k];
-    if((c.dias||0)>0)pProd++;
-    else if((c.mobiliza||0)>0)pMob++;
-    else if((c.manualPend||0)>0||c.confianca)pMan++;
-    else pSem++;
+  // Prioridade: Produzindo > Férias (pasta/obs ou classificação) > Em mobilização > Ponto manual (confiança) > Sem apontamento.
+  // A CLASSIFICAÇÃO MANUAL do gestor (ROBO_CLASS) manda: "ferias" → Férias; outros motivos ficam documentados no drill.
+  var pProd=0,pMob=0,pFer=0,pMan=0,pSem=0;
+  var motivos={afast:0,falta_inj:0,esqueceu:0,aguard:0,outros:0}; // motivos dentro de "sem apontamento" (documentação)
+  function _statusPessoa(c){
+    if((c.dias||0)>0)return 'prod';
+    var cls=ROBO_CLASS[String(c.id)];
+    if(cls==='ferias'||(c.feriasDias||0)>0)return 'fer';
+    if((c.mobiliza||0)>0)return 'mob';
+    if((c.manualPend||0)>0||c.confianca)return 'man';
+    return 'sem';
+  }
+  Object.keys(d.byC).forEach(function(k){var c=d.byC[k];var st=_statusPessoa(c);
+    if(st==='prod')pProd++;else if(st==='fer')pFer++;else if(st==='mob')pMob++;else if(st==='man')pMan++;
+    else {pSem++; var cls=ROBO_CLASS[String(c.id)]; if(cls&&motivos[cls]!=null)motivos[cls]++;}
   });
   var noPeriodo=Object.keys(d.byC).length;      // universo = todos que aparecem no período
   var presentes=pProd;                           // "Produzindo" alimenta a capacidade
-  var mobil=pMob, manPend=pMan, semAp=pSem;
+  var mobil=pMob, manPend=pMan, semAp=pSem, feriasP=pFer;
+  var semClassif=semAp-(motivos.afast+motivos.falta_inj+motivos.esqueceu+motivos.aguard+motivos.outros); // ainda sem classificar
   var semCad=Object.keys(d.byC).filter(function(k){return /SEM\s*CADASTRO/i.test(String(d.byC[k].cargo||''))}).length;
   // OVERLAYS EM HORAS (qualidade das horas — não são cabeça, não fatura):
   var nAtest=Object.keys(d.byC).filter(function(k){return (d.byC[k].atestado||0)>0}).length;
@@ -9412,16 +9462,17 @@ function execHTML(FA,con){
   }
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
     +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:6px">📊 VISÃO EXECUTIVA — '+((FA&&FA.titulo)||'período')+' <span style="font-size:8px;font-weight:400;color:var(--dm)">· clique nas caixas com 🔎 para ver quem é e tratar</span></div>'
-    // EFETIVO — status único por pessoa (reconcilia: soma das 4 caixinhas = pessoas no período)
+    // EFETIVO — status único por pessoa (reconcilia: soma das caixinhas = pessoas no período)
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">👥 EFETIVO — status único por pessoa (soma reconcilia)</div>'
-    +'<div class="g g" style="grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:4px">'
+    +'<div class="g g" style="grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:4px">'
     +box('No período',String(noPeriodo),'var(--cs)',efetTotal+' no cadastro RH'+(semCad>0?(' · '+semCad+' sem cadastro'):''))
     +box('Produzindo',String(pProd),'var(--gn)','trabalhou ≥1 dia',"roboIrDetalhe('relatorios','analiseSemBatida')")
     +box('Em mobilização',String(mobil),mobil>0?'var(--ca)':'var(--gn)','treinamento/crachá',"roboIrDetalhe('relatorios','analiseMobilizacao')")
+    +box('Férias',String(feriasP),feriasP>0?'#7c4dff':'var(--gn)','pasta férias / classificado',"roboIrDetalhe('relatorios','analiseFerias')")
     +box('Ponto manual',String(manPend),manPend>0?'var(--co)':'var(--gn)','confiança — aguardando card',"roboIrDetalhe('relatorios','analiseManualPend')")
-    +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','nunca produziu — não fatura',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +box('Sem apontamento',String(semAp),semAp>0?'var(--rd)':'var(--gn)','a classificar — não fatura',"roboIrDetalhe('relatorios','analiseSemBatida')")
     +'</div>'
-    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">🧮 <b>'+noPeriodo+' no período</b> = '+pProd+' produzindo + '+mobil+' mobilização + '+manPend+' ponto manual + '+semAp+' sem apontamento. Cada pessoa em <b>um</b> status só. Cadastro RH: '+efetTotal+(semCad>0?(' · '+semCad+' aparecem no espelho sem cadastro (novatos)'):'')+'.</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-bottom:6px">🧮 <b>'+noPeriodo+' no período</b> = '+pProd+' produzindo + '+mobil+' mobilização + '+feriasP+' férias + '+manPend+' ponto manual + '+semAp+' sem apontamento. Cada pessoa em <b>um</b> status só. Cadastro RH: '+efetTotal+(semCad>0?(' · '+semCad+' aparecem no espelho sem cadastro (novatos)'):'')+'. Dos '+semAp+' sem apontamento: '+semClassif+' a classificar'+((semAp-semClassif)>0?(' · '+(semAp-semClassif)+' já com motivo ('+motivos.falta_inj+' falta injust., '+motivos.esqueceu+' esqueceu, '+motivos.aguard+' aguard. atestado, '+motivos.afast+' afastamento, '+motivos.outros+' outros)'):'')+'.</div>'
     // OVERLAYS EM HORAS — não são cabeça; são horas que não faturam (sobre os produzindo/ausentes)
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">⏱ HORAS QUE NÃO FATURAM (absenteísmo — overlay, não conta cabeça de novo)</div>'
     +'<div class="g g" style="grid-template-columns:repeat(2,1fr);gap:5px;margin-bottom:8px">'
@@ -9883,8 +9934,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=105;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='105 · 08/08/2026 · EFETIVO holístico: status ÚNICO por pessoa (Produzindo/Mobilização/Ponto manual/Sem apontamento) que soma o total do período (103), sem dupla contagem · Faltas/Atestados e Sem batida viram HORAS (overlay)';
+var CBSI_VER=106;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='106 · 08/08/2026 · FÉRIAS (status+card, lê pasta FÉRIAS/obs) fora do sem apontamento · SELETOR de classificação dos dias em branco (Falta injust./Esqueceu/Aguardando atestado/Afastamento/Outros) roteando cada um para sua caixa · espelho não aponta férias, fonte é pasta/classificação';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
