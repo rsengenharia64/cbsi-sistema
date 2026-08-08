@@ -9519,6 +9519,58 @@ function execHTML(FA,con){
   return h;
 }
 
+// QUADRO RESUMO — consolidador de todos os grupos (pessoas + horas), cada linha com descrição e 🔎 → detalhe (fonte)
+function resumoHTML(FA,con){
+  var d=analiseDados(FA),T=d.T,P=ROBO_PARAMS;
+  var pProd=0,pMob=0,pFer=0,pMan=0,pSem=0;
+  Object.keys(d.byC).forEach(function(k){var c=d.byC[k];
+    if((c.dias||0)>0)pProd++;
+    else if(ROBO_CLASS[String(c.id)]==='ferias'||(c.feriasDias||0)>0)pFer++;
+    else if((c.mobiliza||0)>0)pMob++;
+    else if((c.manualPend||0)>0||c.confianca)pMan++;
+    else pSem++;
+  });
+  var noP=Object.keys(d.byC).length;
+  var efet=(typeof ROBO_EFET!=='undefined'&&ROBO_EFET)?ROBO_EFET.length:noP;
+  var bruto=T.he50ap-T.he50, buf=(d.perdaBuffer||0), perda=(d.perdaReal!=null?d.perdaReal:bruto);
+  var tolTot=(T.tolAntes||0)+(T.tolApos||0);
+  var absH=(+T.faltaH||0)+(+T.atestH||0), sbH=(+T.semBatidaH||0);
+  function _row(lbl,val,cor,desc,click){
+    return '<div onclick="'+click+'" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-left:4px solid '+cor+';border-bottom:1px solid var(--bd);cursor:pointer" title="clique para ver o detalhe (fonte)">'
+      +'<div style="min-width:180px;font-weight:800;font-size:11px;color:'+cor+'">'+lbl+' <span style="font-size:9px;color:var(--ca)">🔎</span></div>'
+      +'<div style="min-width:130px;font-size:16px;font-weight:800;color:'+cor+'">'+val+'</div>'
+      +'<div style="font-size:9px;color:var(--dm);flex:1;min-width:180px">'+desc+'</div>'
+      +'<div style="font-size:9px;color:var(--ca);font-weight:700">ver ›</div></div>';
+  }
+  var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
+    +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:2px">📋 QUADRO RESUMO — '+((FA&&FA.titulo)||'período')+'</div>'
+    +'<div style="font-size:8px;color:var(--dm);margin-bottom:8px">Consolidador de todos os grupos. Cada linha traz a <b>descrição</b> do que é e a <b>🔎</b> leva direto ao detalhe (a fonte do número).</div>'
+    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 2px">👥 PESSOAS — efetivo (status único, soma reconcilia '+noP+')</div>'
+    +'<div style="border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:8px">'
+    +_row('No período',String(noP),'var(--cs)','Todas as pessoas que aparecem no espelho no período (cadastro RH: '+efet+' + novatos sem cadastro).',"roboSub('exec')")
+    +_row('Produzindo',String(pProd),'var(--gn)','Trabalharam ≥ 1 dia — geram HH faturável.',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +_row('Em mobilização',String(pMob),'#00adf9','Treinamento / aguardando crachá / admissão — ainda não produzem no cliente.',"roboIrDetalhe('relatorios','analiseMobilizacao')")
+    +_row('Férias',String(pFer),'#7c4dff','Em férias no período (pasta FÉRIAS ou classificação manual). Não é "sem apontamento".',"roboIrDetalhe('relatorios','analiseFerias')")
+    +_row('Ponto manual',String(pMan),'var(--co)','Cargos de confiança — jornada vem da pasta PONTO MANUAL, não batem cartão.',"roboIrDetalhe('relatorios','analiseManualPend')")
+    +_row('Sem apontamento',String(pSem),'var(--rd)','Dias úteis em branco sem explicação — a classificar. Não fatura.',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +'</div>'
+    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 2px">⏱ HORAS — consolidação</div>'
+    +'<div style="border:1px solid var(--bd);border-radius:8px;overflow:hidden">'
+    +_row('HN — Normal (faturável)',h2hm(T.hn),'var(--cs)','Horas normais dentro da jornada 07:00–17:00 — faturáveis no BM.',"roboSub('relatorios')")
+    +_row('HE 50% apurada → validada',h2hm(T.he50ap)+' → '+h2hm(T.he50),'var(--co)','Apurada = trabalhada acima da jornada; validada = reconhecida pelo cliente no De Acordo HE.',"roboSub('deacordo')")
+    +_row('HE não reconhecida (sem validação cliente)',h2hm(bruto),'var(--rd)','HE apurada que o cliente NÃO validou (bruto, antes de tirar o buffer de 15min).',"roboSub('deacordo')")
+    +_row('Buffer 15 min (CBSI não paga)',h2hm(buf),'#c9a000','06:45-07:00 / 17:00-17:15 / sex 16:00-16:15 embutidos na não reconhecida — a CBSI não paga, então sai da distorção.',"roboIrDetalhe('relatorios','analiseTolerancia')")
+    +_row('DISTORÇÃO REAL (custo s/ receita)',h2hm(perda)+' · '+_brl(d.perdaRealR$||0),'var(--rd)','O que a CBSI PAGA na folha e NÃO recebe do cliente = não reconhecida − buffer 15min. Número de AÇÃO (impacto na DRE).',"roboSub('deacordo')")
+    +_row('Tolerância 15 min (absorvida)',h2hm(tolTot),'#c9a000','Batida dentro dos 15min — trabalhada mas NUNCA vira HE. Não é custo nem recebível.',"roboIrDetalhe('relatorios','analiseTolerancia')")
+    +_row('HE 100% / 150% / Ad. Noturno',h2hm(T.he100)+' / '+h2hm(T.he150)+' / '+h2hm(T.adn),'var(--co)','Sábado (100%) · domingo/feriado (150%) · adicional noturno.',"roboSub('relatorios')")
+    +_row('Faltas / Atestados (absenteísmo)',h2hm(absH),'var(--co)','Horas de ausência = jornada − trabalhado nos dias de falta/atestado (do espelho).',"roboIrDetalhe('relatorios','analiseAtestado')")
+    +_row('Sem batida (não fatura)',h2hm(sbH),'var(--rd)','Dias úteis sem registro × jornada — horas que ficam de fora do faturamento.',"roboIrDetalhe('relatorios','analiseSemBatida')")
+    +'</div>'
+    +'<div style="font-size:7px;color:var(--dm);margin-top:6px">🔎 Clique em qualquer linha para abrir a fonte (De Acordo HE, drills de tolerância/absenteísmo/mobilização, etc.). Os valores são da competência em tela.</div>'
+    +'</div>';
+  return h;
+}
+
 function renderRobo(){
   var host=document.getElementById('roboBox');
   if(!host){var pg=document.getElementById('p-ponto');if(!pg)return;host=document.createElement('div');host.id='roboBox';pg.appendChild(host)}
@@ -9529,7 +9581,7 @@ function renderRobo(){
   Object.values(con.porFunc).forEach(function(a){tot.hn+=a.hn;tot.he50+=a.he50;tot.he50ap+=(+a.he50ap||0);tot.he100+=a.he100;tot.he150+=a.he150;tot.adn+=a.adn});
   var funcs=funcoesBM();
   var semDepara=Object.keys(con.porFunc).filter(function(f){return f.indexOf('(sem De×Para')===0});
-  var _SUBS=[['exec','📊 Visão Executiva'],['relatorios','📈 Relatórios'],['capacidade','⚙️ Capacidade Produtiva'],['deacordo','🔐 De Acordo HE'],['auditoria','🔍 Auditoria & Edição'],['jornada','⏱ Jornada & Regras'],['dados','📥 Dados & Drive']];
+  var _SUBS=[['resumo','📋 Quadro Resumo'],['exec','📊 Visão Executiva'],['relatorios','📈 Relatórios'],['capacidade','⚙️ Capacidade Produtiva'],['deacordo','🔐 De Acordo HE'],['auditoria','🔍 Auditoria & Edição'],['jornada','⏱ Jornada & Regras'],['dados','📥 Dados & Drive']];
   var SUBNAV='<div style="display:flex;gap:3px;flex-wrap:wrap;margin:4px 0 8px;border-bottom:2px solid var(--bd);padding-bottom:5px">'+_SUBS.map(function(s){var on=ROBO_SUB===s[0];return '<button class="rsubtab" data-tab="'+s[0]+'" onclick="roboSub(\''+s[0]+'\')" style="font-size:9px;font-weight:700;padding:5px 11px;border:1px solid var(--bd);border-radius:7px 7px 0 0;cursor:pointer;background:'+(on?'var(--cs)':'transparent')+';color:'+(on?'#fff':'var(--dm)')+'">'+s[1]+'</button>'}).join('')+'</div>';
   function _sw(n){return '<div class="rsub" data-sub="'+n+'" style="'+(ROBO_SUB===n?'':'display:none')+'">'}
 
@@ -9582,6 +9634,7 @@ function renderRobo(){
      return html;
    })()
   +'</div>'   /* fim jornada */
+  +_sw('resumo')+resumoHTML(FA,con)+'</div>'
   +_sw('exec')+execHTML(FA,con)
   +'</div>'   /* fim exec */
   +_sw('relatorios')
@@ -9934,8 +9987,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=106;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='106 · 08/08/2026 · FÉRIAS (status+card, lê pasta FÉRIAS/obs) fora do sem apontamento · SELETOR de classificação dos dias em branco (Falta injust./Esqueceu/Aguardando atestado/Afastamento/Outros) roteando cada um para sua caixa · espelho não aponta férias, fonte é pasta/classificação';
+var CBSI_VER=107;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='107 · 08/08/2026 · QUADRO RESUMO — sub-aba consolidadora de todos os grupos (pessoas + horas: tolerância 15min, sem validação cliente, buffer, distorção real, absenteísmo, sem batida…), cada linha com descrição e 🔎 → detalhe (fonte)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
