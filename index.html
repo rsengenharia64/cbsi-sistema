@@ -10061,9 +10061,168 @@ if(typeof window.renderEfet==='function'){
 }
 window.efetComportamentalReal=efetComportamentalReal;
 
+// ===================================================================
+// CENTRAL PERFORMANCE 360° — hub único: agrupa Boletim Medição, Efetivo e
+// Espelho de Ponto como sub-pastas + landing "Resumo/Performance 360".
+// ===================================================================
+var C360_SUB='resumo';
+function _c360PuHN(d){try{var t=d.bmTiers&&d.bmTiers.hn;return (t&&t.q>0)?(t.v/t.q):0}catch(e){return 0}}
+function c360Equip(mes){
+  var out={rows:[],glosaV:0,metaV:0,realV:0};
+  try{
+    var bm=JSON.parse(localStorage.getItem('cbsi-v15-bm-mesdata')||'{}');
+    var m=bm[String(+mes)]||bm[String(mes)]; if(!m||!m.rows)return out;
+    m.rows.forEach(function(r){
+      var t=String(r.t||'').toUpperCase();
+      if(t!=='VB'&&t!=='VM')return;                 // equipamentos / verbas mensais
+      var q=(+r.q||0), pu=(+r.pu||0), v=(+r.v!=null?+r.v:q*pu);
+      if(q<=0)return;
+      var meta=Math.ceil(q-1e-9);                   // fracionado → arredonda p/ cima = disponibilidade contratada
+      var glosaQ=Math.max(0,meta-q), glosaV=glosaQ*pu;
+      out.rows.push({desc:r.desc||r.d||'',q:q,meta:meta,pu:pu,v:v,glosaQ:glosaQ,glosaV:glosaV});
+      out.glosaV+=glosaV; out.metaV+=meta*pu; out.realV+=v;
+    });
+    out.rows.sort(function(a,b){return b.glosaV-a.glosaV});
+  }catch(e){}
+  return out;
+}
+function c360SetParam(k,v){ROBO_PARAMS[k]=(+v||0);try{lss('cbsi-v15-robo-params',ROBO_PARAMS)}catch(e){}c360Render();}
+function c360ResumoHTML(){
+  var P=ROBO_PARAMS, FA, d;
+  try{FA=roboFiltroAtivo(); d=analiseDados(FA);}catch(e){return '<div class="cd" style="margin:8px;text-align:center;color:var(--dm);padding:20px">Sem dados de ponto ainda. Faça o upload/atualização dos espelhos na sub-pasta Espelho de Ponto.</div>';}
+  var T=d.T, regs=FA.regs||[];
+  var pProd=0,pFer=0,pAfa=0,pMob=0,pMan=0,pSem=0;
+  Object.keys(d.byC).forEach(function(k){var c=d.byC[k];
+    if((c.dias||0)>0)pProd++; else if(_ehFerP(c))pFer++; else if(_ehAfaP(c))pAfa++;
+    else if((c.mobiliza||0)>0)pMob++; else if((c.manualPend||0)>0||c.confianca)pMan++; else pSem++;});
+  var noPeriodo=Object.keys(d.byC).length, presentes=pProd;
+  var capH=(+P.capHorasMes||184), absPct=(+P.absenteismo||0), absFac=Math.max(0,1-absPct/100);
+  var capMes=presentes*capH, capPrev=capMes*absFac;
+  var registrado=0; regs.forEach(function(l){registrado+=(+l.trab||0)});
+  var aderPct=capPrev>0?Math.round(registrado/capPrev*100):0;
+  var puHN=_c360PuHN(d);
+  var nSab=(+P.heMetaSabados||2), hSab=(+P.heMetaHorasSab||8);
+  var metaHEh=presentes*nSab*hSab;
+  var puHE100=(function(){try{var t=d.bmTiers&&d.bmTiers.he100;return (t&&t.q>0)?(t.v/t.q):(puHN*2)}catch(e){return puHN*2}})();
+  var metaHE_R=metaHEh*puHE100, realHE100h=(+T.he100||0), realHE100_R=realHE100h*puHE100;
+  var mesComp=FA.compMesEff||null, eq=c360Equip(mesComp);
+  var hePagaCBSI=(+T.he50ap||0), heRecCli=(+T.he50||0);
+  var perdaRealH=(+d.perdaReal||0), perdaRealReceita=perdaRealH*puHN*1.5;
+  var absHoras=(+T.faltaH||0)+(+T.atestH||0), absReceita=absHoras*puHN;
+  var sbHoras=(+T.semBatidaH||0), sbReceita=sbHoras*puHN;
+  var perdas=[{k:'Glosa de equipamento (indisponib./manutenção)',v:eq.glosaV},
+    {k:'HE paga CBSI e não reconhecida (distorção)',v:perdaRealReceita},
+    {k:'Absenteísmo (faltas/atestados)',v:absReceita},
+    {k:'Dias sem batida',v:sbReceita}].filter(function(x){return x.v>0.005}).sort(function(a,b){return b.v-a.v});
+  var perdaTot=perdas.reduce(function(s,x){return s+x.v},0), maxP=perdas.length?perdas[0].v:1;
+  var semCad=Object.keys(d.byC).filter(function(k){return /SEM\s*CADASTRO/i.test(String(d.byC[k].cargo||''))}).length;
+  function _pu(x){return puHN>0?_brl(x):'—'}
+  function kp(l,v,c,s){return '<div class="kp" style="border-top:4px solid '+c+';padding:14px 12px"><div class="kl" style="font-size:11px">'+l+'</div><div class="kv" style="color:'+c+';font-size:26px;font-weight:800">'+v+'</div>'+(s?'<div class="ks" style="font-size:9px">'+s+'</div>':'')+'</div>'}
+  var corAder=aderPct>=95?'var(--gn)':(aderPct>=80?'#c9a000':'var(--rd)');
+  var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
+   +'<div style="font-size:14px;font-weight:800;color:var(--cs)">🎯 PERFORMANCE 360° — '+((FA&&FA.titulo)||'período')+'</div>'
+   +'<div style="font-size:8px;color:var(--dm);margin-bottom:8px">Análise gerencial do contrato · efetivo, H/H, produção, equipamentos, horas extras e Pareto de perdas de receita. Mesma base do Efetivo e do Espelho de Ponto.</div>'
+   // ---- H/H previsto x realizado ----
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:2px 0 4px">⏱ CAPACIDADE DE FATURAMENTO (H/H) — previsto × realizado <span style="font-weight:400">(absenteísmo '+absPct+'% já descontado)</span></div>'
+   +'<div class="g" style="grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:8px">'
+   +kp('Efetivo produzindo',String(presentes),'var(--gn)',noPeriodo+' no período'+(semCad>0?(' · '+semCad+' s/ cadastro'):''))
+   +kp('H/H previsto',h2hm(capPrev),'var(--cs)',_pc2(100*absFac)+'% de '+h2hm(capMes)+' cheio')
+   +kp('H/H realizado',h2hm(registrado),'var(--gn)','apontado no período')
+   +kp('Aderência',aderPct+'%','#fff'.replace('#fff',corAder),'realizado ÷ previsto')
+   +kp('Férias/Afast./Mobil.',pFer+'/'+pAfa+'/'+pMob,'#7c4dff','fora da produção')
+   +'</div>'
+   // ---- META HORAS EXTRA (só sábados) ----
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🗓️ META DE HORAS EXTRA — sábados <span style="font-weight:400">(ajuste os números; a meta recalcula sozinha)</span></div>'
+   +'<div class="g" style="grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:8px">'
+   +'<div class="kp" style="border-top:4px solid #e07b39;padding:14px 12px"><div class="kl" style="font-size:11px">Parâmetros da meta</div>'
+     +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:10px;margin-top:4px">'
+     +'Sábados no mês: <input type="number" min="0" max="5" step="1" value="'+nSab+'" onchange="c360SetParam(\'heMetaSabados\',this.value)" style="width:48px;font-size:11px;padding:3px;font-weight:700">'
+     +'· Horas/sábado: <input type="number" min="1" max="12" step="1" value="'+hSab+'" onchange="c360SetParam(\'heMetaHorasSab\',this.value)" style="width:48px;font-size:11px;padding:3px;font-weight:700"> a 100%'
+     +'</div><div style="font-size:8px;color:var(--dm);margin-top:4px">'+presentes+' produzindo × '+nSab+' sáb × '+hSab+'h. O dia útil extra (20% do efetivo) fica desligado por enquanto.</div></div>'
+   +kp('Meta HE (horas)',h2hm(metaHEh),'#e07b39','sábados 100%')
+   +kp('Meta HE (R$)',_pu(metaHE_R),'#e07b39','realizado: '+h2hm(realHE100h)+' · '+_pu(realHE100_R))
+   +'</div>'
+   // ---- EQUIPAMENTOS ----
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🚜 EQUIPAMENTOS — meta = quantidade arredondada p/ cima · gap = glosa por indisponibilidade/manutenção</div>'
+   +(eq.rows.length?('<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:4px">'
+     +kp('Faturado (real)',_brl(eq.realV),'var(--gn)',eq.rows.length+' equipamentos')
+     +kp('Meta (arredondada)',_brl(eq.metaV),'var(--cs)','disponibilidade contratada')
+     +kp('Glosa (perda)',_brl(eq.glosaV),'var(--rd)','indisponibilidade/manutenção')
+     +'</div>'
+     +'<div style="max-height:180px;overflow:auto"><table style="width:100%;font-size:9px;border-collapse:collapse">'
+     +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Equipamento</th><th>Qtd real</th><th>Meta</th><th>Gap</th><th style="text-align:right">Glosa R$</th></tr>'
+     +eq.rows.slice(0,10).map(function(r){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left">'+r.desc+'</td><td style="text-align:center">'+n2(r.q)+'</td><td style="text-align:center;font-weight:700">'+r.meta+'</td><td style="text-align:center;color:'+(r.glosaQ>0.001?'var(--rd)':'var(--gn)')+'">'+n2(r.glosaQ)+'</td><td style="text-align:right;color:var(--rd)">'+(r.glosaV>0.005?_brl(r.glosaV):'—')+'</td></tr>'}).join('')
+     +'</table></div>'):'<div style="font-size:9px;color:var(--dm);margin-bottom:6px">Sem boletim de equipamentos carregado para esta competência (carregue o BM na sub-pasta Boletim Medição).</div>')
+   // ---- HE CBSI x CLIENTE ----
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:8px 0 4px">💸 HORAS EXTRAS — paga pela CBSI × reconhecida pelo cliente</div>'
+   +'<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">'
+   +kp('HE 50% paga CBSI',h2hm(hePagaCBSI),'var(--co)','apurada na folha')
+   +kp('HE 50% reconhec. cliente',h2hm(heRecCli),'var(--gn)','validada (De Acordo)')
+   +kp('Distorção real',h2hm(perdaRealH),'var(--rd)',_pu(perdaRealReceita)+' de receita não faturada')
+   +'</div>'
+   // ---- PARETO ----
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">📉 PARETO — perdas de receita '+(puHN>0?('(total '+_brl(perdaTot)+')'):'(informe o BM p/ valores em R$)')+'</div>'
+   +(perdas.length&&puHN>0?('<div style="margin-bottom:8px">'+perdas.map(function(x,i){var w=Math.round(x.v/maxP*100);var ac=perdas.slice(0,i+1).reduce(function(s,y){return s+y.v},0);var acp=perdaTot>0?Math.round(ac/perdaTot*100):0;return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:9px"><div style="width:220px">'+x.k+'</div><div style="flex:1;background:var(--bd);border-radius:4px;overflow:hidden"><div style="width:'+w+'%;background:'+['#c0392b','#e07b39','#c9a000','#8e6b9e'][i%4]+';color:#fff;padding:2px 6px;font-weight:700;white-space:nowrap">'+_brl(x.v)+'</div></div><div style="width:44px;text-align:right;color:var(--dm)">'+acp+'%</div></div>'}).join('')+'</div>'):'<div style="font-size:9px;color:var(--dm);margin-bottom:6px">Sem perdas mensuráveis em R$ (ou BM ausente).</div>')
+   // ---- ANÁLISE GERENCIAL ----
+   +'<div style="font-size:9px;color:var(--dm);border-top:1px dashed var(--bd);padding-top:6px">🧭 <b>Leitura gerencial:</b> aderência de H/H em <b style="color:'+corAder+'">'+aderPct+'%</b> do previsto ('+h2hm(registrado)+' de '+h2hm(capPrev)+'). '
+   +(perdas.length&&puHN>0?('Maior perda de receita: <b>'+perdas[0].k+'</b> ('+_brl(perdas[0].v)+'). '):'')
+   +'Distorção de HE (paga e não reconhecida): '+h2hm(perdaRealH)+'. '
+   +'Fora da produção: '+pFer+' férias, '+pAfa+' afastados, '+pMob+' em mobilização, '+pMan+' ponto manual, '+pSem+' sem apontamento.</div>'
+   +'</div>';
+  return h;
+}
+function _pc2(x){return (Math.round(x*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}
+function c360Render(){var el=document.getElementById('c360-resumo');if(el)el.innerHTML=c360ResumoHTML();}
+function c360Show(which){
+  C360_SUB=which;
+  var res=document.getElementById('c360-resumo'); if(res)res.style.display=(which==='resumo')?'block':'none';
+  ['bm','efet','ponto'].forEach(function(id){var n=document.getElementById('p-'+id);if(n)n.classList.toggle('on',which===id);});
+  try{Array.prototype.forEach.call(document.querySelectorAll('#c360-subnav .c360tab'),function(b){b.classList.toggle('on',b.getAttribute('data-s')===which);});}catch(e){}
+  try{
+    if(which==='resumo')c360Render();
+    else if(which==='bm'&&typeof renderBM==='function')renderBM();
+    else if(which==='efet'&&typeof renderEfet==='function')renderEfet();
+    else if(which==='ponto'&&typeof renderPonto==='function')renderPonto();
+  }catch(e){console.warn('c360 show:',e)}
+}
+function c360Setup(){
+  try{
+    if(document.getElementById('p-c360'))return;
+    var tabs=document.getElementById('tabs'); if(!tabs)return;
+    var anyPg=document.querySelector('.pg'); var host=anyPg?anyPg.parentNode:document.body;
+    // injeta estilo do sub-nav
+    if(!document.getElementById('c360-style')){var stl=document.createElement('style');stl.id='c360-style';
+      stl.textContent='#c360-subnav{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px;border-bottom:2px solid var(--cs);padding-bottom:6px}.c360tab{padding:6px 12px;border-radius:6px 6px 0 0;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--bd);background:var(--c1);color:var(--ch)}.c360tab.on{background:var(--cb);color:#fff;border-color:var(--cb)}';
+      document.head.appendChild(stl);}
+    // cria a página do hub
+    var pg=document.createElement('div'); pg.className='pg'; pg.id='p-c360';
+    pg.innerHTML='<div id="c360-subnav"></div><div id="c360-body"><div id="c360-resumo"></div></div>';
+    host.insertBefore(pg, host.firstChild);
+    // move as 3 páginas para dentro do hub
+    var body=document.getElementById('c360-body');
+    ['bm','efet','ponto'].forEach(function(id){var n=document.getElementById('p-'+id);if(n)body.appendChild(n);});
+    // botão do hub como PRIMEIRO no topo (o handler base já cuida do toggle por id p-c360)
+    var hub=document.createElement('div'); hub.className='tab'; hub.setAttribute('data-p','c360'); hub.textContent='🎯 CENTRAL PERFORMANCE 360°';
+    tabs.insertBefore(hub, tabs.firstChild);
+    // remove os botões de topo das 3 abas (viram sub-pastas)
+    ['bm','efet','ponto'].forEach(function(id){var b=tabs.querySelector('.tab[data-p="'+id+'"]');if(b)b.remove();});
+    // sub-nav do hub
+    var subs=[['resumo','📊 Resumo 360'],['bm','📋 Boletim Medição'],['efet','👥 Efetivo'],['ponto','⏱ Espelho de Ponto']];
+    document.getElementById('c360-subnav').innerHTML=subs.map(function(s){return '<div class="c360tab" data-s="'+s[0]+'" onclick="c360Show(\''+s[0]+'\')">'+s[1]+'</div>'}).join('');
+    // ao (re)abrir o hub, reaplica o sub-estado
+    tabs.addEventListener('click',function(e){var t=e.target.closest('.tab');if(t&&t.getAttribute('data-p')==='c360'){setTimeout(function(){c360Show(C360_SUB||'resumo')},0);}});
+    // hub como aba ativa inicial
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on')}); hub.classList.add('on');
+    document.querySelectorAll('.pg').forEach(function(x){x.classList.remove('on')}); pg.classList.add('on');
+    c360Show('resumo');
+  }catch(e){console.warn('c360 setup:',e)}
+}
+window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c360Render;
+setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
+
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=113;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='113 · 10/08/2026 · Férias e Afastado/Licença agora vêm AUTOMÁTICOS da coluna Status da planilha de Efetivos (fonte Drive, sempre atualizada) cruzada com o apontamento do espelho. Novo card "Afastado / Licença" no painel executivo + drill próprio';
+var CBSI_VER=114;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='114 · 10/08/2026 · Hub CENTRAL PERFORMANCE 360° (aba inicial): Boletim Medição, Efetivo e Espelho de Ponto viram sub-pastas + landing Resumo/Performance 360 (H/H previsto×realizado c/ absenteísmo, meta HE sábados editável, glosa de equipamento por arredondamento, HE CBSI×cliente, Pareto de perdas)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
