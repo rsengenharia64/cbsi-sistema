@@ -8992,7 +8992,13 @@ function analiseDados(FA){
     T.adnAp+=((+l.adnAp!=null&&l.adnAp!=='')?+l.adnAp:(+l.adn||0));
     if((+l.trab||0)>0)T.dias++;
     var id=l.id||l.mat||l.nome||'?';
-    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:l.mat||'',cargo:l.cargo||'',func:l.funcQQP||l.cargo||'',confianca:ehCargoManual(l.cargo||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,semBatidaH:0,manualPend:0,atestado:0,falta:0,faltaH:0,atestH:0,feriasDias:0,dias:0,tolAntes:0,tolApos:0,diasTol:0,mobiliza:0,mobUlt:''};
+    // CARGO/FUNÇÃO SEMPRE VIVO DA FONTE DRIVE (Efetivos): resolve pelo id no cadastro atual;
+    // só usa o valor "congelado" no lançamento como fallback. Assim, atualizar o Efetivos (XLSX do Drive)
+    // corrige a função de todos automaticamente, sem precisar reprocessar os espelhos.
+    var _efc=efetById(String(id));
+    var _cargoViv=(_efc&&_efc.cargo)?_efc.cargo:(l.cargo||'');
+    var _matViv=(_efc&&_efc.mat)?_efc.mat:(l.mat||'');
+    var c=byC[id]=byC[id]||{id:id,nome:l.nome||id,mat:_matViv,cargo:_cargoViv,func:_cargoViv||l.funcQQP||'',confianca:ehCargoManual(_cargoViv||l.funcQQP),diasExc:0,minAntes:0,minApos:0,he50ap:0,he50:0,semBatida:0,semBatidaH:0,manualPend:0,atestado:0,falta:0,faltaH:0,atestH:0,feriasDias:0,dias:0,tolAntes:0,tolApos:0,diasTol:0,mobiliza:0,mobUlt:''};
     c.he50ap+=(+l.he50ap||0);c.he50+=(+l.he50||0);if((+l.trab||0)>0)c.dias++;
     // ATESTADO / FALTA / FÉRIAS: o marcador vem no texto do espelho (ct) ou no obs (ex.: "PONTO MANUAL · Ferias").
     var _o=String((l.obs||'')+' '+(l.phtd||'')+' '+(l.ct||''));
@@ -10027,8 +10033,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=110;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='110 · 08/08/2026 · Card "Meta de horas (previsto)" mostra a capacidade prevista em HORAS (95%) e Realizado em horas · linha PERDA DE RECEITA (distorção × valor da hora normal) na tabela de receita';
+var CBSI_VER=111;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='111 · 10/08/2026 · Correção "(sem cadastro)": função/cargo agora é lido AO VIVO do cadastro de Efetivos (fonte Drive) na hora da análise. Basta atualizar o Efetivos (XLSX) que todos os colaboradores — inclusive novatos — passam a exibir a função automaticamente, sem reprocessar os espelhos';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
