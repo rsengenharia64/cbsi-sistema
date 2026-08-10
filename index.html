@@ -10066,8 +10066,46 @@ function efetComportamentalReal(){
 // envelopa o renderEfet base: após ele montar a aba, substitui o painel comportamental pelo real
 if(typeof window.renderEfet==='function'){
   var _origRenderEfet=window.renderEfet;
-  window.renderEfet=function(){var r=_origRenderEfet.apply(this,arguments);try{efetComportamentalReal()}catch(e){console.warn('comportamental real:',e)}try{efetHHReal()}catch(e){console.warn('efetHHReal:',e)}return r;};
+  window.renderEfet=function(){var r=_origRenderEfet.apply(this,arguments);try{efetComportamentalReal()}catch(e){console.warn('comportamental real:',e)}try{efetHHReal()}catch(e){console.warn('efetHHReal:',e)}try{fixEfetLive()}catch(e){console.warn('fixEfetLive:',e)}return r;};
 }
+// EFETIVO COMPLETO: a lista base vinha do array estático EF (snapshot PONTOS 18-20/Mar/2026) — por isso,
+// ao filtrar Julho, as horas por pessoa e o rótulo "puxavam março". Aqui reconstruímos as colunas
+// H.Norm/H.Extra/AD.Not/Dias com a APURAÇÃO REAL da competência do filtro (roboFiltroAtivo().regs)
+// e trocamos o rótulo da fonte para a competência vigente. Filtragem (disciplina/função/nome) preservada.
+function fixEfetLive(){
+  var host=document.getElementById('p-efet'); if(!host)return;
+  if(typeof EF==='undefined'||!EF) return;
+  try{c360ResolveComp();}catch(e){}
+  var FA=roboFiltroAtivo(), regs=(FA&&FA.regs)||[];
+  var comp=(FA&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'período';
+  // agrega apuração da competência por MATRÍCULA e por NOME
+  var byMat={}, byNome={};
+  regs.forEach(function(l){
+    var hn=(+l.hn||0), he=(+l.he50||0)+(+l.he100||0)+(+l.he150||0), adn=(+l.adn||0), trab=(+l.trab||0);
+    var mk=String(l.mat||'').replace(/\D/g,''), nk=normTxt(l.nome||'');
+    if(mk){var a=byMat[mk]=byMat[mk]||{hn:0,he:0,adn:0,dias:0};a.hn+=hn;a.he+=he;a.adn+=adn;if(trab>0||hn>0)a.dias++;}
+    if(nk){var b=byNome[nk]=byNome[nk]||{hn:0,he:0,adn:0,dias:0};b.hn+=hn;b.he+=he;b.adn+=adn;if(trab>0||hn>0)b.dias++;}
+  });
+  function jul(e){var mk=String(e.m||'').replace(/\D/g,'');var bym=mk&&byMat[mk];if(bym)return bym;var byn=byNome[normTxt(e.n||'')];return byn||{hn:0,he:0,adn:0,dias:0};}
+  // relabel do título da fonte (tira "PONTOS 18-20/Mar/2026")
+  [].slice.call(host.querySelectorAll('.ct')).forEach(function(ct){
+    if(/Efetivo Completo/i.test(ct.textContent||'')){
+      ct.textContent='Efetivo Completo — '+EF.length+' colaboradores (cadastro) · horas da apuração '+comp;
+    }
+  });
+  // sobrescreve o renderizador da tabela para usar as horas da competência
+  var _fd=(typeof fd==='function')?fd:function(x){return x};
+  var _DC=(typeof DC!=='undefined')?DC:{};
+  window.fEf=function(){
+    var dv=(document.getElementById('fD')||{}).value||'', fv=(document.getElementById('fF')||{}).value||'', nv=((document.getElementById('fN')||{}).value||'').toUpperCase();
+    var fl=EF; if(dv)fl=fl.filter(function(e){return e.d===dv}); if(fv)fl=fl.filter(function(e){return e.f===fv}); if(nv)fl=fl.filter(function(e){return e.n.toUpperCase().indexOf(nv)>=0||e.m.toUpperCase().indexOf(nv)>=0});
+    var cnt=document.getElementById('efCount'); if(cnt)cnt.textContent='Exibindo '+fl.length+' de '+EF.length+' colaboradores · horas da apuração '+comp;
+    var tb=document.getElementById('efTb'); if(!tb)return;
+    tb.innerHTML=fl.map(function(e){var j=jul(e);return '<tr><td style="font-family:\'JetBrains Mono\';font-size:8px">'+e.m+'</td><td>'+e.n+'</td><td style="font-size:9px">'+e.f+'</td><td><span style="color:'+(_DC[e.d]||'var(--dm)')+';font-size:8px;font-weight:700">'+e.d+'</span></td><td style="font-family:\'JetBrains Mono\'">'+_fd(j.hn,1)+'</td><td style="font-family:\'JetBrains Mono\';color:'+(j.he>0?'var(--ca)':'var(--dm)')+'">'+_fd(j.he,1)+'</td><td style="font-family:\'JetBrains Mono\';color:'+(j.adn>0?'var(--rd)':'var(--dm)')+'">'+_fd(j.adn,1)+'</td><td style="font-family:\'JetBrains Mono\'">'+(j.dias||0)+'</td></tr>';}).join('');
+  };
+  try{window.fEf();}catch(e){}
+}
+window.fixEfetLive=fixEfetLive;
 window.efetComportamentalReal=efetComportamentalReal;
 // Substitui os cards estáticos "H.Normal/H.Extra/Ad.Noturno (3d)" da aba Efetivo pelo H/H REAL do espelho
 // na competência do filtro do topo (antes vinham de um snapshot fixo — parecia "dados de março").
@@ -10119,13 +10157,16 @@ function c360Equip(mes){
 // Indiretos sem item de H/H no BM (não faturam produção) ficam de fora.
 function c360MetaHHDireta(d){
   var capH=(+ROBO_PARAMS.capHorasMes||184), absFac=Math.max(0,1-(+ROBO_PARAMS.absenteismo||0)/100);
+  var puMed=_c360PuHN(d);                                       // preço-hora médio do BM (fallback p/ fechar o efetivo)
   var byF={};
   Object.keys(d.byC).forEach(function(k){var c=d.byC[k];
     if((c.dias||0)<=0)return;                                   // só efetivo produtivo
     var fbm=ROBO_DEPARA[normTxt(c.cargo||'')]||c.funcQQP||c.func||'';
-    if(!fbm)return;
-    var it=bmItemDe(fbm,'HN'); var pu=it?(+it.pu||0):0;
-    if(pu<=0)return;                                            // sem preço de H/H no BM → não fatura produção
+    var it=fbm?bmItemDe(fbm,'HN'):null; var pu=it?(+it.pu||0):0;
+    // REGRA (a pedido do gestor): contabilizar TODO produtivo — se a função não tem preço no QQP,
+    // usa o preço-hora médio do BM e agrupa em "Outros (sem função no QQP)". Assim o efetivo produtivo
+    // da meta fecha com o "produzindo" (não sobra ninguém de fora) e o número fica coerente.
+    if(!fbm||pu<=0){fbm='Outros (sem função no QQP)';pu=puMed;}
     if(!byF[fbm])byF[fbm]={n:0,pu:pu}; byF[fbm].n++;
   });
   var rows=Object.keys(byF).map(function(f){var o=byF[f];var horas=o.n*capH*absFac;return{func:f,n:o.n,pu:o.pu,horas:horas,meta:horas*o.pu}}).sort(function(a,b){return b.meta-a.meta});
@@ -10257,16 +10298,29 @@ function c360ResumoHTML(){
      +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Equipamento</th><th>Qtd real</th><th>Meta</th><th>Gap</th><th style="text-align:right">Glosa R$</th></tr>'
      +eq.rows.slice(0,12).map(function(r){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left">'+r.desc+'</td><td style="text-align:center">'+n2(r.q)+'</td><td style="text-align:center;font-weight:700">'+r.meta+'</td><td style="text-align:center;color:'+(r.glosaQ>0.001?'var(--rd)':'var(--gn)')+'">'+n2(r.glosaQ)+'</td><td style="text-align:right;color:var(--rd)">'+(r.glosaV>0.005?_brl(r.glosaV):'—')+'</td></tr>'}).join('')
      +'</table></div>'):'<div style="font-size:9px;color:var(--dm);margin-bottom:6px">Sem boletim de equipamentos carregado para esta competência (carregue o BM na sub-pasta Boletim Medição).</div>')
-   // ---- HE CBSI x CLIENTE ----
-   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:8px 0 4px">💸 HORAS EXTRAS — paga pela CBSI × reconhecida pelo cliente <span style="font-weight:400">(análise de custo — não entra no Pareto de faturamento)</span></div>'
-   +'<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">'
-   +kp('HE 50% paga CBSI',h2hm(hePagaCBSI),'var(--co)','apurada na folha')
-   +kp('HE 50% reconhec. cliente',h2hm(heRecCli),'var(--gn)','validada (De Acordo)')
-   +kp('Distorção real',h2hm(perdaRealH),'var(--rd)',_pu(perdaRealReceita)+' de custo não faturado')
-   +'</div>'
+   // ---- HE CBSI x CLIENTE: ocultado a pedido do gestor (fica na Apuração H/H → Visão Executiva / De Acordo HE) ----
    // ---- PARETO ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">📉 PARETO — perdas de receita '+(temBM?('(total '+_brl(perdaTot)+')'):'(informe o BM p/ valores em R$)')+'</div>'
    +(perdas.length&&temBM?('<div style="margin-bottom:8px">'+perdas.map(function(x,i){var w=Math.round(x.v/maxP*100);var ac=perdas.slice(0,i+1).reduce(function(s,y){return s+y.v},0);var acp=perdaTot>0?Math.round(ac/perdaTot*100):0;return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:9px"><div style="width:240px">'+x.k+'</div><div style="flex:1;background:var(--bd);border-radius:4px;overflow:hidden"><div style="width:'+Math.max(w,8)+'%;background:'+['#c0392b','#e07b39','#c9a000','#8e6b9e'][i%4]+';color:#fff;padding:2px 6px;font-weight:700;white-space:nowrap">'+_brl(x.v)+'</div></div><div style="width:44px;text-align:right;color:var(--dm)">'+acp+'%</div></div>'}).join('')+'</div>'):'<div style="font-size:9px;color:var(--dm);margin-bottom:6px">Sem perdas mensuráveis em R$ (ou BM ausente).</div>')
+   // ---- DETALHE DA PERDA H/H POR CAUSA (decompõe a "Perda de faturamento H/H" do Pareto: atestado, falta, sem batida, ritmo) ----
+   +(function(){
+     if(!temBM||perdaHH<=0.5)return '';
+     var faltaR=(+T.faltaH||0)*puHN, atestR=(+T.atestH||0)*puHN, sbR=(+T.semBatidaH||0)*puHN;
+     var soma=faltaR+atestR+sbR, outrosR=Math.max(0,perdaHH-soma);
+     var mobDias=0;Object.keys(d.byC).forEach(function(k){mobDias+=(+d.byC[k].mobiliza||0)});
+     var linhas=[['🩺 Atestados',(+T.atestH||0),atestR,'var(--co)'],
+                 ['🚫 Faltas',(+T.faltaH||0),faltaR,'var(--rd)'],
+                 ['⛔ Sem batida (dia útil em branco)',(+T.semBatidaH||0),sbR,'var(--rd)'],
+                 ['📉 Ritmo/produção abaixo da meta + medição',null,outrosR,'#c9a000']]
+                .filter(function(l){return l[2]>0.5||l[0].indexOf('Ritmo')>=0});
+     return '<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🔬 DETALHE DA PERDA DE FATURAMENTO H/H — '+_brl(perdaHH)+' <span style="font-weight:400">por causa (quanto cada grupo tirou do faturamento)</span></div>'
+       +'<div style="border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:6px"><table style="width:100%;font-size:10px;border-collapse:collapse">'
+       +'<tr style="background:var(--c1);font-weight:800"><th style="text-align:left;padding:5px 10px">Causa</th><th style="text-align:right">Horas</th><th style="text-align:right;padding-right:10px">Perda R$</th><th style="text-align:right;padding-right:10px">% da perda</th></tr>'
+       +linhas.map(function(l){var pc=perdaHH>0?Math.round(l[2]/perdaHH*100):0;return '<tr style="border-top:1px solid var(--bd)"><td style="text-align:left;padding:5px 10px;font-weight:700;color:'+l[3]+'">'+l[0]+'</td><td style="text-align:right">'+(l[1]==null?'—':h2hm(l[1]))+'</td><td style="text-align:right;padding-right:10px;font-weight:700;color:'+l[3]+'">'+_brl(l[2])+'</td><td style="text-align:right;padding-right:10px;color:var(--dm)">'+pc+'%</td></tr>'}).join('')
+       +'<tr style="border-top:2px solid var(--bd);background:rgba(255,71,87,.06);font-weight:800"><td style="padding:6px 10px">TOTAL PERDA H/H</td><td></td><td style="text-align:right;padding-right:10px;color:var(--rd)">'+_brl(perdaHH)+'</td><td style="text-align:right;padding-right:10px">100%</td></tr>'
+       +'</table></div>'
+       +'<div style="font-size:7px;color:var(--dm);margin-bottom:8px">Atestados/Faltas/Sem batida valorizados na hora normal do BM ('+_brl(puHN)+'/h). "Ritmo/medição" = o restante da meta não realizada (produção abaixo de '+capH+'h×'+_pc2(100*absFac)+'% + diferença do que o BM efetivamente mediu). <b>Fora desta conta</b> (não são efetivo produtivo, não entram nos '+_brl(perdaHH)+'): '+pMob+' em mobilização'+(mobDias>0?(' ('+mobDias+' dias)'):'')+', '+pFer+' férias, '+pAfa+' afastados.</div>';
+   })()
    // ---- LEITURA GERENCIAL ----
    +'<div style="font-size:9px;color:var(--dm);border-top:1px dashed var(--bd);padding-top:6px">🧭 <b>Leitura gerencial:</b> '
    +(temBM?('faturamento H/H em <b style="color:'+corA+'">'+atFatHH+'%</b> da meta ('+_brl(realHNv)+' de '+_brl(metaFatHH)+' — perda de '+_brl(perdaHH)+'). Glosa de equipamento '+_brl(eq.glosaV)+'. '):'carregue o BM da competência para ver os valores em R$. ')
@@ -10327,8 +10381,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=121;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='121 · 10/08/2026 · Coerência: o card "Meta faturamento H/H" agora explica de onde vem o número — "X de Y produzindo com função no BM · Z indireto(s)" — deixando claro que a meta por função conta só quem produz e tem função cobrada no BM (indiretos ficam de fora). Mantém os ajustes do 120: 21 novatos embutidos + mesclagem automática no cadastro (fim do "sem cadastro"); upload só bloqueia por emissão quando AS DUAS datas existem e a nova é mais antiga.';
+var CBSI_VER=122;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='122 · 10/08/2026 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
