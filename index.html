@@ -10208,7 +10208,7 @@ function c360ResumoHTML(){
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:2px 0 4px">💰 FATURAMENTO H/H — meta × realizado <span style="font-weight:400">(meta = '+(mdir.ok?'conta direta por função: nº × '+capH+'h × preço da função × '+_pc2(100*absFac)+'%':'efetivo × '+capH+'h × valor H/H médio × '+_pc2(100*absFac)+'%')+')</span></div>'
    +'<div class="g" style="grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:4px">'
    +kpL('Efetivo produzindo',String(presentes),'var(--gn)',noPeriodo+' no período'+(semCad>0?(' · '+semCad+' s/ cadastro'):''))
-   +kpL('Meta faturamento H/H',_pu(metaFatHH),'var(--cs)',(mdir.ok?(metaEfetivo+' produtivos por função'):(h2hm(metaHoras)+' × '+(temBM?_brl(puHN):'—')+'/h')))
+   +kpL('Meta faturamento H/H',_pu(metaFatHH),'var(--cs)',(mdir.ok?(metaEfetivo+' de '+presentes+' produzindo com função no BM'+((presentes-metaEfetivo)>0?(' · '+(presentes-metaEfetivo)+' indireto(s)'):'')):(h2hm(metaHoras)+' × '+(temBM?_brl(puHN):'—')+'/h')))
    +kpL('Realizado H/H (BM)',_pu(realHNv),'var(--gn)',h2hm(realHNh)+' normais faturadas')
    +kpL('Horas extras (R$)',_pu(heFatR),'#e07b39',h2hm(heFatH)+' faturadas (50/100/150)')
    +kpL('Perda H/H',_pu(perdaHH),perdaHH>0?'var(--rd)':'var(--gn)',(temBM?(atFatHH+'% da meta atingido'):'informe o BM'))
@@ -10327,8 +10327,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=120;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='120 · 10/08/2026 · (1) "(sem cadastro)": os 21 novatos foram embutidos no cadastro (id 8 díg. + função da lista RH) e são mesclados automaticamente no cadastro salvo — resolve o sem cadastro e reconcilia a meta por função com o "produzindo". (2) Upload: a blindagem por data de emissão só pula quando AS DUAS datas existem e a nova é mais antiga (não trava mais upload cuja emissão não foi lida)';
+var CBSI_VER=121;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='121 · 10/08/2026 · Coerência: o card "Meta faturamento H/H" agora explica de onde vem o número — "X de Y produzindo com função no BM · Z indireto(s)" — deixando claro que a meta por função conta só quem produz e tem função cobrada no BM (indiretos ficam de fora). Mantém os ajustes do 120: 21 novatos embutidos + mesclagem automática no cadastro (fim do "sem cadastro"); upload só bloqueia por emissão quando AS DUAS datas existem e a nova é mais antiga.';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
