@@ -6169,9 +6169,11 @@ var RX_HORA=/(\d{1,2}:\d{2})\s*([EAD])/g;
 var RX_CONTA=/(Hora Extra 50%|Hora Extra 100%|Hora Extra 150%|HE 150% Pagar|Adic\.? ?Not\.? ?Informativo|Adic ?Not ?HE ?50%|Adic ?Not ?HE ?100%|Ad ?Not ?HE ?150%|Atraso[^\d]*|Aus[êe]ncia[^\d]*|Falta[^\d]*|Licen[çc]a[^\d]*|Sa[íi]da[^\d]*|Afastam\.?[^\d]*|Interjornada[^\d]*|Aguardando[^\d]*|Treinamento|Exame[^\d]*|Presen[çc]a)\s+([\d]{1,2}[:,][\d]{2})/g;
 
 function parseEspelhos(lines){
-  var blocos=[],cur=null;
+  var blocos=[],cur=null,lastEmiss='';
   lines.forEach(function(ln){
-    if(/ESPELHO DO CART[ÃA]O DE PONTO/i.test(ln)){if(cur&&cur.id)blocos.push(cur);cur={dias:[],per:'',ref:'',id:'',nome:''};return}
+    if(/ESPELHO DO CART[ÃA]O DE PONTO/i.test(ln)){if(cur&&cur.id)blocos.push(cur);var _em=(ln.match(/(\d{2}\/\d{2}\/\d{4})/)||[])[1]||lastEmiss||'';cur={dias:[],per:'',ref:'',id:'',nome:'',emiss:_em};return}
+    // data de emissão/impressão do espelho (linha só com dd/mm/aaaa, vem logo antes do cabeçalho)
+    if(/^\s*\d{2}\/\d{2}\/\d{4}\s*$/.test(ln)){lastEmiss=ln.trim();if(cur&&!cur.emiss)cur.emiss=lastEmiss;return}
     if(!cur)return;
     var m;
     if((m=ln.match(/Per[íi]odo\s+(\d{2}\/\d{2}\/\d{4})\s+a\s+(\d{2}\/\d{2}\/\d{4})\s*-\s*Ref\.?\s*([A-Z]{3}\/\d{4})/i))){cur.per=m[1]+' a '+m[2];cur.ref=m[3].toUpperCase();return}
@@ -6612,10 +6614,17 @@ function roboProcessarPdf(file,statusEl){
     if(!blocos.length)throw new Error('Nenhum espelho reconhecido em '+file.name);
     var novos=0,semCad=[],pulados=0;
     blocos.forEach(function(b){
-      // blindagem contra espelhos PARCIAIS antigos: se já existem MAIS dias carregados para este
-      // colaborador+referência (vindos de outro arquivo), este arquivo é uma versão anterior — pula
-      var jaTem=ROBO_LANC.filter(function(l){return l.id===b.id&&l.ref===b.ref&&l.phtd!=='MAN'&&l.arq!==file.name}).length;
-      if(jaTem>b.dias.length){pulados++;return}
+      // blindagem: mantém sempre a versão MAIS RECENTE (por data de emissão do espelho) de cada
+      // colaborador+competência. Empate na emissão → vence o arquivo com MAIS dias (mais completo).
+      // Assim, subir espelhos duplicados/antigos nunca sobrescreve a informação mais atual.
+      var prev=ROBO_LANC.filter(function(l){return l.id===b.id&&l.ref===b.ref&&l.phtd!=='MAN'&&l.arq!==file.name});
+      var _emK=function(s){var mm=String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/);return mm?(mm[3]+mm[2]+mm[1]):''};
+      var prevEmiss=prev.reduce(function(x,l){var k=_emK(l.emiss);return k>x?k:x},'');
+      var newEmiss=_emK(b.emiss);
+      if(prev.length){
+        if(prevEmiss>newEmiss){pulados++;return}                                 // já há versão mais recente
+        if(prevEmiss===newEmiss&&prev.length>b.dias.length){pulados++;return}     // mesma emissão, versão atual mais completa
+      }
       var ef=efetById(b.id);
       if(!ef)semCad.push(b.id+' '+b.nome);
       var cargo=ef?ef.cargo:'(sem cadastro)';
@@ -6633,7 +6642,7 @@ function roboProcessarPdf(file,statusEl){
           if(c.trab<=0&&c.he150<=0)return;
           ROBO_LANC=ROBO_LANC.filter(function(l){return !(l.phtd==='MAN'&&l.data===d.data&&(l.id===b.id||normTxt(l.nome)===nomeN))});
         }
-        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he50ap:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; ')+(feriasPorPasta?' · Ferias':''),arq:file.name,
+        ROBO_LANC.push({ref:b.ref,per:b.per,data:d.data,dow:d.dow,phtd:d.phtd,id:b.id,mat:ef?ef.mat:'',nome:ef?ef.nome:b.nome,cargo:cargo,funcQQP:funcQ,hn:c.hn,he50:c.he50,he50ap:c.he50,he100:c.he100,he150:c.he150,adn:c.adn,trab:c.trab,obs:c.obs.join('; ')+(feriasPorPasta?' · Ferias':''),arq:file.name,emiss:b.emiss||'',
           mk:d.marcas.join('|'),ct:d.contas.map(function(x){return x.t+'~'+x.v}).join(';')});
       });
       novos++;
@@ -10033,8 +10042,8 @@ if(typeof window.renderEfet==='function'){
 window.efetComportamentalReal=efetComportamentalReal;
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=111;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='111 · 10/08/2026 · Correção "(sem cadastro)": função/cargo agora é lido AO VIVO do cadastro de Efetivos (fonte Drive) na hora da análise. Basta atualizar o Efetivos (XLSX) que todos os colaboradores — inclusive novatos — passam a exibir a função automaticamente, sem reprocessar os espelhos';
+var CBSI_VER=112;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='112 · 10/08/2026 · Blindagem contra espelhos duplicados: o sistema mantém sempre a versão MAIS RECENTE de cada competência pela DATA DE EMISSÃO do espelho (empate → mais dias). Subir arquivo antigo/repetido nunca sobrescreve a informação mais atual';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
