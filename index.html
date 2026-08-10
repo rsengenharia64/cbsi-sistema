@@ -10142,20 +10142,33 @@ function c360ResumoHTML(){
   var perdaTot=perdas.reduce(function(s,x){return s+x.v},0), maxP=perdas.length?perdas[0].v:1;
   var semCad=Object.keys(d.byC).filter(function(k){return /SEM\s*CADASTRO/i.test(String(d.byC[k].cargo||''))}).length;
   var temBM=puHN>0;
+  // HORAS EXTRAS (faturadas no BM) e a COMPENSAÇÃO da deficiência de horas
+  var heFatR=(+tHE.v||0), heFatH=(+tHE.q||0);                                   // HE faturada (R$ e horas) no BM
+  var defHoras=(+T.faltaH||0)+(+T.atestH||0)+(+T.semBatidaH||0);                // deficiência: faltas + atestados + sem batida
+  var defR=defHoras*puHN;                                                        // deficiência valorizada na hora normal média
+  var heLiq=heFatR-defR;                                                         // >0: a HE cobriu o buraco; <0: não cobriu
+  // TOTALIZADORES financeiros (meta × realizado)
+  var hhMetaTot=metaFatHH+metaHE_R, hhRealTot=realHNv+heFatR;                    // H/H Normal + Extra
+  var t2Meta=hhMetaTot+eq.metaV, t2Real=hhRealTot+eq.realV;                      // H/H + Equipamentos
+  var svReal=Math.max(0, bmTotal-realHNv-heFatR-eq.realV);                       // serviços/verbas (sem meta própria)
+  var t3Meta=t2Meta+svReal, t3Real=bmTotal;                                      // Meta total × Realizado total
   function _pu(x){return temBM?_brl(x):'—'}
   function kp(l,v,c,s){return '<div class="kp" style="border-top:4px solid '+c+';padding:14px 12px"><div class="kl" style="font-size:11px">'+l+'</div><div class="kv" style="color:'+c+';font-size:24px;font-weight:800">'+v+'</div>'+(s?'<div class="ks" style="font-size:9px">'+s+'</div>':'')+'</div>'}
+  function kpL(l,v,c,s){return '<div class="kp" onclick="c360Show(\'ponto\')" title="clique para ver o detalhe na Apuração H/H" style="border-top:4px solid '+c+';padding:14px 12px;cursor:pointer"><div class="kl" style="font-size:11px">'+l+' <span style="font-size:9px;color:var(--ca)">🔎</span></div><div class="kv" style="color:'+c+';font-size:22px;font-weight:800">'+v+'</div>'+(s?'<div class="ks" style="font-size:9px">'+s+'</div>':'')+'</div>'}
+  function kpTot(l,meta,real,c){var pct=meta>0?Math.round(real/meta*100):0;return '<div class="kp" onclick="c360Show(\'ponto\')" title="clique para ver o detalhe na Apuração H/H" style="border-top:4px solid '+c+';padding:12px;cursor:pointer"><div class="kl" style="font-size:10px">'+l+' <span style="font-size:9px;color:var(--ca)">🔎</span></div><div style="font-size:9px;color:var(--dm);margin-top:2px">Meta: <b style="color:var(--cs)">'+_pu(meta)+'</b></div><div style="font-size:17px;font-weight:800;color:'+c+';line-height:1.2">'+_pu(real)+'</div><div style="font-size:8px;color:var(--dm)">realizado · '+pct+'% da meta</div></div>'}
   var atFatHH=metaFatHH>0?Math.round(realHNv/metaFatHH*100):0, corA=atFatHH>=95?'var(--gn)':(atFatHH>=80?'#c9a000':'var(--rd)');
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
    +'<div style="font-size:14px;font-weight:800;color:var(--cs)">🧭 ANÁLISE GERENCIAL — '+((FA&&FA.titulo)||'período')+'</div>'
    +'<div style="font-size:8px;color:var(--dm);margin-bottom:8px">Faturamento meta × realizado (fonte: Boletim de Medição no Drive) · H/H, equipamentos, horas extras e Pareto de perdas de receita. Mesma base do Efetivo e da Apuração H/H.</div>'
    // ---- FATURAMENTO H/H: META × REALIZADO ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:2px 0 4px">💰 FATURAMENTO H/H — meta × realizado <span style="font-weight:400">(meta = '+(mdir.ok?'conta direta por função: nº × '+capH+'h × preço da função × '+_pc2(100*absFac)+'%':'efetivo × '+capH+'h × valor H/H médio × '+_pc2(100*absFac)+'%')+')</span></div>'
-   +'<div class="g" style="grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:4px">'
-   +kp('Efetivo produzindo',String(presentes),'var(--gn)',noPeriodo+' no período'+(semCad>0?(' · '+semCad+' s/ cadastro'):''))
-   +kp('Meta faturamento H/H',_pu(metaFatHH),'var(--cs)',(mdir.ok?(metaEfetivo+' produtivos por função'):(h2hm(metaHoras)+' × '+(temBM?_brl(puHN):'—')+'/h')))
-   +kp('Realizado H/H (BM)',_pu(realHNv),'var(--gn)',h2hm(realHNh)+' normais faturadas')
-   +kp('Perda H/H',_pu(perdaHH),perdaHH>0?'var(--rd)':'var(--gn)',(temBM?(atFatHH+'% da meta atingido'):'informe o BM'))
-   +kp('Férias/Afast./Mobil.',pFer+'/'+pAfa+'/'+pMob,'#7c4dff','fora da produção')
+   +'<div class="g" style="grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:4px">'
+   +kpL('Efetivo produzindo',String(presentes),'var(--gn)',noPeriodo+' no período'+(semCad>0?(' · '+semCad+' s/ cadastro'):''))
+   +kpL('Meta faturamento H/H',_pu(metaFatHH),'var(--cs)',(mdir.ok?(metaEfetivo+' produtivos por função'):(h2hm(metaHoras)+' × '+(temBM?_brl(puHN):'—')+'/h')))
+   +kpL('Realizado H/H (BM)',_pu(realHNv),'var(--gn)',h2hm(realHNh)+' normais faturadas')
+   +kpL('Horas extras (R$)',_pu(heFatR),'#e07b39',h2hm(heFatH)+' faturadas (50/100/150)')
+   +kpL('Perda H/H',_pu(perdaHH),perdaHH>0?'var(--rd)':'var(--gn)',(temBM?(atFatHH+'% da meta atingido'):'informe o BM'))
+   +kpL('Férias/Afast./Mobil.',pFer+'/'+pAfa+'/'+pMob,'#7c4dff','fora da produção')
    +'</div>'
    +(mdir.ok?('<details style="margin-bottom:6px"><summary style="cursor:pointer;font-size:8px;color:var(--cs);font-weight:700">🔎 Meta por função ('+mdir.rows.length+' funções · '+metaEfetivo+' produtivos) — indiretos sem H/H no BM ficam de fora</summary>'
      +'<div style="max-height:170px;overflow:auto;margin-top:3px"><table style="width:100%;font-size:9px;border-collapse:collapse">'
@@ -10163,7 +10176,21 @@ function c360ResumoHTML(){
      +mdir.rows.map(function(r){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left">'+r.func+'</td><td style="text-align:center;font-weight:700">'+r.n+'</td><td style="text-align:center">'+_brl(r.pu)+'</td><td style="text-align:center;color:var(--dm)">'+h2hm(r.horas)+'</td><td style="text-align:right;font-weight:700;color:var(--cs)">'+_brl(r.meta)+'</td></tr>'}).join('')
      +'<tr style="background:var(--c1);font-weight:800"><td style="padding:3px">TOTAL META H/H</td><td style="text-align:center">'+metaEfetivo+'</td><td></td><td></td><td style="text-align:right;color:var(--cs)">'+_brl(metaFatHH)+'</td></tr>'
      +'</table></div></details>'):'')
-   +'<div style="font-size:8px;color:var(--dm);margin:0 0 8px">Realizado total medido no BM: <b>'+(temBM?_brl(bmTotal):'—')+'</b> = H/H normal '+_pu(realHNv)+' + HE '+_pu(tHE.v)+' + equipamentos '+_pu(eq.realV)+' + serviços/verbas.</div>'
+   +'<div style="font-size:8px;color:var(--dm);margin:0 0 8px">Realizado total medido no BM: <b>'+(temBM?_brl(bmTotal):'—')+'</b> = H/H normal '+_pu(realHNv)+' + HE '+_pu(heFatR)+' + equipamentos '+_pu(eq.realV)+' + serviços/verbas '+_pu(svReal)+'.</div>'
+   // ---- TOTALIZADORES FINANCEIROS (meta × realizado por grupo) ----
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🧮 TOTAIS FINANCEIROS — meta × realizado por grupo <span style="font-weight:400">(clique para o detalhe na Apuração H/H)</span></div>'
+   +'<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:6px">'
+   +kpTot('H/H Normal + Extra',hhMetaTot,hhRealTot,'var(--gn)')
+   +kpTot('H/H total + Equipamentos',t2Meta,t2Real,'var(--cs)')
+   +kpTot('TOTAL GERAL (meta × realizado)',t3Meta,t3Real,t3Real>=t3Meta?'var(--gn)':'#e07b39')
+   +'</div>'
+   // ---- HE COMPENSOU A DEFICIÊNCIA DE HORAS? ----
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">⚖️ A HORA EXTRA COMPENSOU A DEFICIÊNCIA? <span style="font-weight:400">(HE faturada × horas perdidas por faltas/atestados/sem batida)</span></div>'
+   +'<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">'
+   +kpL('HE faturada (ganho)',_pu(heFatR),'var(--gn)',h2hm(heFatH)+' extras no BM')
+   +kpL('Deficiência de horas (perda)',_pu(defR),'var(--rd)',h2hm(defHoras)+' (falta+atest.+s/ batida)')
+   +'<div class="kp" style="border-top:4px solid '+(heLiq>=0?'var(--gn)':'var(--rd)')+';padding:14px 12px"><div class="kl" style="font-size:11px">Líquido (HE − deficiência)</div><div class="kv" style="color:'+(heLiq>=0?'var(--gn)':'var(--rd)')+';font-size:22px;font-weight:800">'+(temBM?(heLiq>=0?'+':'')+_brl(heLiq):'—')+'</div><div class="ks" style="font-size:9px">'+(heLiq>=0?'a HE cobriu a deficiência':'a HE NÃO cobriu — perda líquida')+'</div></div>'
+   +'</div>'
    // ---- META HORAS EXTRA (só sábados) ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🗓️ META DE HORAS EXTRA — sábados <span style="font-weight:400">(ajuste os números; a meta recalcula sozinha)</span></div>'
    +'<div class="g" style="grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:8px">'
@@ -10254,8 +10281,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=116;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='116 · 10/08/2026 · Meta de faturamento H/H agora por CONTA DIRETA POR FUNÇÃO (nº por função × 184h × preço QQP da função × 95%), excluindo indiretos sem H/H no BM — em vez da taxa média. Detalhe "Meta por função" no painel. Realizado segue sendo o fato do BM';
+var CBSI_VER=117;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='117 · 10/08/2026 · Análise Gerencial em cadeia: card de Horas Extras (R$) na linha superior + lupa em cada card levando à Apuração H/H · TOTAIS FINANCEIROS (H/H N+E, H/H+Equip, Total geral meta×realizado) · bloco "A HE compensou a deficiência?" (HE faturada × horas perdidas por falta/atestado/sem batida = líquido)';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
