@@ -10057,9 +10057,27 @@ function efetComportamentalReal(){
 // envelopa o renderEfet base: após ele montar a aba, substitui o painel comportamental pelo real
 if(typeof window.renderEfet==='function'){
   var _origRenderEfet=window.renderEfet;
-  window.renderEfet=function(){var r=_origRenderEfet.apply(this,arguments);try{efetComportamentalReal()}catch(e){console.warn('comportamental real:',e)}return r;};
+  window.renderEfet=function(){var r=_origRenderEfet.apply(this,arguments);try{efetComportamentalReal()}catch(e){console.warn('comportamental real:',e)}try{efetHHReal()}catch(e){console.warn('efetHHReal:',e)}return r;};
 }
 window.efetComportamentalReal=efetComportamentalReal;
+// Substitui os cards estáticos "H.Normal/H.Extra/Ad.Noturno (3d)" da aba Efetivo pelo H/H REAL do espelho
+// na competência do filtro do topo (antes vinham de um snapshot fixo — parecia "dados de março").
+function efetHHReal(){
+  var host=document.getElementById('p-efet'); if(!host)return;
+  try{c360ResolveComp();}catch(e){}
+  var FA=roboFiltroAtivo(), d=analiseDados(FA), T=d.T;
+  var hn=(+T.hn||0), he=(+T.he50||0)+(+T.he100||0)+(+T.he150||0), adn=(+T.adn||0);
+  var comp=(FA&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'período';
+  function _hh(x){return (Math.round(x*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:1})+'h';}
+  [].slice.call(host.querySelectorAll('.kp')).forEach(function(kp){
+    var kl=kp.querySelector('.kl'), kv=kp.querySelector('.kv'); if(!kl||!kv)return;
+    var t=normTxt(kl.textContent);
+    if(/^H\.?\s*NORMAL/.test(t)){kl.textContent='H. Normal ('+comp+')'; kv.textContent=_hh(hn);}
+    else if(/^H\.?\s*EXTRA/.test(t)){kl.textContent='H. Extra ('+comp+')'; kv.textContent=_hh(he);}
+    else if(/NOTURNO/.test(t)){kl.textContent='Ad. Noturno ('+comp+')'; kv.textContent=_hh(adn);}
+  });
+}
+window.efetHHReal=efetHHReal;
 
 // ===================================================================
 // CENTRAL PERFORMANCE 360° — hub único: agrupa Boletim Medição, Efetivo e
@@ -10162,15 +10180,17 @@ function c360ResumoHTML(){
   var defHoras=(+T.faltaH||0)+(+T.atestH||0)+(+T.semBatidaH||0);                // deficiência: faltas + atestados + sem batida
   var defR=defHoras*puHN;                                                        // deficiência valorizada na hora normal média
   var heLiq=heFatR-defR;                                                         // >0: a HE cobriu o buraco; <0: não cobriu
-  // TOTALIZADORES financeiros (meta × realizado)
-  var hhMetaTot=metaFatHH+metaHE_R, hhRealTot=realHNv+heFatR;                    // H/H Normal + Extra
+  // TOTALIZADORES financeiros (meta × realizado). A HORA EXTRA é variável (bônus), não tem meta de capacidade:
+  // entra na meta pelo PRÓPRIO realizado, então o único gap é a perda de H/H normal (+ glosa de equip. no total).
+  // Assim o realizado nunca fica "maior que a meta" e o % reflete a perda real (coerente com o Pareto).
+  var hhMetaTot=metaFatHH+heFatR, hhRealTot=realHNv+heFatR;                      // H/H Normal + Extra
   var t2Meta=hhMetaTot+eq.metaV, t2Real=hhRealTot+eq.realV;                      // H/H + Equipamentos
   var svReal=Math.max(0, bmTotal-realHNv-heFatR-eq.realV);                       // serviços/verbas (sem meta própria)
   var t3Meta=t2Meta+svReal, t3Real=bmTotal;                                      // Meta total × Realizado total
   function _pu(x){return temBM?_brl(x):'—'}
   function kp(l,v,c,s){return '<div class="kp" style="border-top:4px solid '+c+';padding:14px 12px"><div class="kl" style="font-size:11px">'+l+'</div><div class="kv" style="color:'+c+';font-size:24px;font-weight:800">'+v+'</div>'+(s?'<div class="ks" style="font-size:9px">'+s+'</div>':'')+'</div>'}
   function kpL(l,v,c,s){return '<div class="kp" onclick="c360Show(\'ponto\')" title="clique para ver o detalhe na Apuração H/H" style="border-top:4px solid '+c+';padding:14px 12px;cursor:pointer"><div class="kl" style="font-size:11px">'+l+' <span style="font-size:9px;color:var(--ca)">🔎</span></div><div class="kv" style="color:'+c+';font-size:22px;font-weight:800">'+v+'</div>'+(s?'<div class="ks" style="font-size:9px">'+s+'</div>':'')+'</div>'}
-  function kpTot(l,meta,real,c){var pct=meta>0?Math.round(real/meta*100):0;return '<div class="kp" onclick="c360Show(\'ponto\')" title="clique para ver o detalhe na Apuração H/H" style="border-top:4px solid '+c+';padding:12px;cursor:pointer"><div class="kl" style="font-size:10px">'+l+' <span style="font-size:9px;color:var(--ca)">🔎</span></div><div style="font-size:9px;color:var(--dm);margin-top:2px">Meta: <b style="color:var(--cs)">'+_pu(meta)+'</b></div><div style="font-size:17px;font-weight:800;color:'+c+';line-height:1.2">'+_pu(real)+'</div><div style="font-size:8px;color:var(--dm)">realizado · '+pct+'% da meta</div></div>'}
+  function kpTot(l,meta,real,c){var pct=meta>0?Math.round(real/meta*100):0;var acima=real>meta+0.5;var sub=acima?('<span style="color:var(--gn);font-weight:700">✓ acima da meta (+'+_pu(real-meta)+')</span>'):(pct+'% da meta · falta '+_pu(Math.max(0,meta-real)));return '<div class="kp" onclick="c360Show(\'ponto\')" title="clique para ver o detalhe na Apuração H/H" style="border-top:4px solid '+c+';padding:12px;cursor:pointer"><div class="kl" style="font-size:10px">'+l+' <span style="font-size:9px;color:var(--ca)">🔎</span></div><div style="font-size:9px;color:var(--dm);margin-top:2px">Meta: <b style="color:var(--cs)">'+_pu(meta)+'</b></div><div style="font-size:17px;font-weight:800;color:'+c+';line-height:1.2">'+_pu(real)+'</div><div style="font-size:8px;color:var(--dm)">realizado · '+sub+'</div></div>'}
   var atFatHH=metaFatHH>0?Math.round(realHNv/metaFatHH*100):0, corA=atFatHH>=95?'var(--gn)':(atFatHH>=80?'#c9a000':'var(--rd)');
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
    +'<div style="font-size:14px;font-weight:800;color:var(--cs)">🧭 ANÁLISE GERENCIAL — '+((FA&&FA.titulo)||'período')+'</div>'
@@ -10298,8 +10318,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=118;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='118 · 10/08/2026 · Correção do filtro: a Análise Gerencial 360 agora SEGUE o filtro de meses do topo e, se o mês não tiver dados, cai automaticamente no mês mais recente com dados (não trava mais em FEV vazio). Re-renderiza na hora ao trocar o mês';
+var CBSI_VER=119;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='119 · 10/08/2026 · (1) Totalizadores: a hora extra entra na meta pelo próprio realizado (bônus), então o realizado não fica mais "maior que a meta" e o % reflete a perda real (coerente com o Pareto); mostra "acima da meta" quando passa. (2) Aba Efetivo: cards H.Normal/H.Extra/Ad.Noturno agora vêm do espelho REAL da competência do topo (não mais do snapshot fixo que parecia "março")';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
