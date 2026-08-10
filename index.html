@@ -10243,7 +10243,18 @@ function c360ResumoHTML(){
   function kpTot(l,meta,real,c){var pct=meta>0?Math.round(real/meta*100):0;var acima=real>meta+0.5;var sub=acima?('<span style="color:var(--gn);font-weight:700">✓ acima da meta (+'+_pu(real-meta)+')</span>'):(pct+'% da meta · falta '+_pu(Math.max(0,meta-real)));return '<div class="kp" onclick="c360Show(\'ponto\')" title="clique para ver o detalhe na Apuração H/H" style="border-top:4px solid '+c+';padding:12px;cursor:pointer"><div class="kl" style="font-size:10px">'+l+' <span style="font-size:9px;color:var(--ca)">🔎</span></div><div style="font-size:9px;color:var(--dm);margin-top:2px">Meta: <b style="color:var(--cs)">'+_pu(meta)+'</b></div><div style="font-size:17px;font-weight:800;color:'+c+';line-height:1.2">'+_pu(real)+'</div><div style="font-size:8px;color:var(--dm)">realizado · '+sub+'</div></div>'}
   var atFatHH=metaFatHH>0?Math.round(realHNv/metaFatHH*100):0, corA=atFatHH>=95?'var(--gn)':(atFatHH>=80?'#c9a000':'var(--rd)');
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
-   +'<div style="font-size:14px;font-weight:800;color:var(--cs)">🧭 ANÁLISE GERENCIAL — '+((FA&&FA.titulo)||'período')+'</div>'
+   +'<style>'
+   +'#c360-resumo .kl{font-size:12.5px!important}'
+   +'#c360-resumo .ks{font-size:10px!important;line-height:1.25}'
+   +'#c360-resumo table{font-size:11px!important}'
+   +'#c360-resumo th,#c360-resumo td{font-size:11px!important;padding:4px 6px!important}'
+   +'#c360-resumo div[style*="font-weight:800"][style*="color:var(--dm)"]{font-size:12.5px!important;margin:8px 0 5px!important}'
+   +'#c360-resumo .c360col{column-count:2;column-gap:16px}'
+   +'#c360-resumo .c360panel{break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;margin-bottom:12px;border:1px solid var(--bd);border-radius:10px;padding:9px 11px 5px}'
+   +'@media(max-width:1100px){#c360-resumo .g[style*="repeat(6"]{grid-template-columns:repeat(3,1fr)!important}}'
+   +'@media(max-width:920px){#c360-resumo .c360col{column-count:1}}'
+   +'</style>'
+   +'<div style="font-size:15px;font-weight:800;color:var(--cs)">🧭 ANÁLISE GERENCIAL — '+((FA&&FA.titulo)||'período')+'</div>'
    +'<div style="font-size:8px;color:var(--dm);margin-bottom:8px">Faturamento meta × realizado (fonte: Boletim de Medição no Drive) · segue o <b>filtro de meses do topo</b> (se o mês não tiver dados, mostra o mais recente com dados). Mesma base do Efetivo e da Apuração H/H.</div>'
    // ---- FATURAMENTO H/H: META × REALIZADO ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:2px 0 4px">💰 FATURAMENTO H/H — meta × realizado <span style="font-weight:400">(meta = '+(mdir.ok?'conta direta por função: nº × '+capH+'h × preço da função × '+_pc2(100*absFac)+'%':'efetivo × '+capH+'h × valor H/H médio × '+_pc2(100*absFac)+'%')+')</span></div>'
@@ -10269,6 +10280,8 @@ function c360ResumoHTML(){
    +kpTot('H/H total + Equipamentos',t2Meta,t2Real,'var(--cs)')
    +kpTot('TOTAL GERAL (meta × realizado)',t3Meta,t3Real,t3Real>=t3Meta?'var(--gn)':'#e07b39')
    +'</div>'
+   +'<div class="c360col">'
+   +'<div class="c360panel">'
    // ---- HE COMPENSOU A DEFICIÊNCIA DE HORAS? ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">⚖️ A HORA EXTRA COMPENSOU A DEFICIÊNCIA? <span style="font-weight:400">(HE faturada × horas perdidas por faltas/atestados/sem batida)</span></div>'
    +'<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px">'
@@ -10276,6 +10289,7 @@ function c360ResumoHTML(){
    +kpL('Deficiência de horas (perda)',_pu(defR),'var(--rd)',h2hm(defHoras)+' (falta+atest.+s/ batida)')
    +'<div class="kp" style="border-top:4px solid '+(heLiq>=0?'var(--gn)':'var(--rd)')+';padding:14px 12px"><div class="kl" style="font-size:11px">Líquido (HE − deficiência)</div><div class="kv" style="color:'+(heLiq>=0?'var(--gn)':'var(--rd)')+';font-size:22px;font-weight:800">'+(temBM?(heLiq>=0?'+':'')+_brl(heLiq):'—')+'</div><div class="ks" style="font-size:9px">'+(heLiq>=0?'a HE cobriu a deficiência':'a HE NÃO cobriu — perda líquida')+'</div></div>'
    +'</div>'
+   +'</div><div class="c360panel">'
    // ---- META HORAS EXTRA (só sábados) ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🗓️ META DE HORAS EXTRA — sábados <span style="font-weight:400">(ajuste os números; a meta recalcula sozinha)</span></div>'
    +'<div class="g" style="grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:8px">'
@@ -10287,6 +10301,7 @@ function c360ResumoHTML(){
    +kp('Meta HE (horas)',h2hm(metaHEh),'#e07b39','sábados 100%')
    +kp('Meta HE (R$)',_pu(metaHE_R),'#e07b39','HE 100% realizada no BM: '+h2hm(realHE100h))
    +'</div>'
+   +'</div><div class="c360panel">'
    // ---- EQUIPAMENTOS ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🚜 EQUIPAMENTOS — meta = quantidade arredondada p/ cima (nº real de equipamentos) · gap = glosa por indisponibilidade/manutenção</div>'
    +(eq.rows.length?('<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:4px">'
@@ -10298,6 +10313,7 @@ function c360ResumoHTML(){
      +'<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Equipamento</th><th>Qtd real</th><th>Meta</th><th>Gap</th><th style="text-align:right">Glosa R$</th></tr>'
      +eq.rows.slice(0,12).map(function(r){return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left">'+r.desc+'</td><td style="text-align:center">'+n2(r.q)+'</td><td style="text-align:center;font-weight:700">'+r.meta+'</td><td style="text-align:center;color:'+(r.glosaQ>0.001?'var(--rd)':'var(--gn)')+'">'+n2(r.glosaQ)+'</td><td style="text-align:right;color:var(--rd)">'+(r.glosaV>0.005?_brl(r.glosaV):'—')+'</td></tr>'}).join('')
      +'</table></div>'):'<div style="font-size:9px;color:var(--dm);margin-bottom:6px">Sem boletim de equipamentos carregado para esta competência (carregue o BM na sub-pasta Boletim Medição).</div>')
+   +'</div><div class="c360panel">'
    // ---- HE CBSI x CLIENTE: ocultado a pedido do gestor (fica na Apuração H/H → Visão Executiva / De Acordo HE) ----
    // ---- PARETO ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">📉 PARETO — perdas de receita '+(temBM?('(total '+_brl(perdaTot)+')'):'(informe o BM p/ valores em R$)')+'</div>'
@@ -10321,6 +10337,7 @@ function c360ResumoHTML(){
        +'</table></div>'
        +'<div style="font-size:7px;color:var(--dm);margin-bottom:8px">Atestados/Faltas/Sem batida valorizados na hora normal do BM ('+_brl(puHN)+'/h). "Ritmo/medição" = o restante da meta não realizada (produção abaixo de '+capH+'h×'+_pc2(100*absFac)+'% + diferença do que o BM efetivamente mediu). <b>Fora desta conta</b> (não são efetivo produtivo, não entram nos '+_brl(perdaHH)+'): '+pMob+' em mobilização'+(mobDias>0?(' ('+mobDias+' dias)'):'')+', '+pFer+' férias, '+pAfa+' afastados.</div>';
    })()
+   +'</div></div>'
    // ---- LEITURA GERENCIAL ----
    +'<div style="font-size:9px;color:var(--dm);border-top:1px dashed var(--bd);padding-top:6px">🧭 <b>Leitura gerencial:</b> '
    +(temBM?('faturamento H/H em <b style="color:'+corA+'">'+atFatHH+'%</b> da meta ('+_brl(realHNv)+' de '+_brl(metaFatHH)+' — perda de '+_brl(perdaHH)+'). Glosa de equipamento '+_brl(eq.glosaV)+'. '):'carregue o BM da competência para ver os valores em R$. ')
@@ -10381,8 +10398,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=122;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='122 · 10/08/2026 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
+var CBSI_VER=123;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='123 · 10/08/2026 · Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
@@ -10391,8 +10408,9 @@ function bmBuildBadge(cor,txt){try{
     document.body.appendChild(e);}
   e.style.background=cor||'#0b3b4a';e.style.color=cor?'#fff':'#7fe3c0';
   e.style.cursor=txt?'pointer':'default';
-  e.title=txt?'Clique para atualizar para a versão mais recente':'Versão carregada (CBSI build '+CBSI_BUILD+').';
-  e.textContent=txt||('CBSI build '+CBSI_BUILD);
+  e.title=txt?'Clique para atualizar para a versão mais recente':('CBSI build '+CBSI_BUILD);
+  e.textContent=txt||('CBSI build '+CBSI_VER);
+  e.style.maxWidth='220px';e.style.whiteSpace='nowrap';e.style.overflow='hidden';e.style.textOverflow='ellipsis';
   e.onclick=txt?function(){location.replace(location.pathname+'?v='+(e.getAttribute('data-ver')||Date.now()));}:null;
 }catch(e){}}
 // Verifica no servidor se há build mais novo e atualiza automaticamente (uma vez por build, por sessão)
