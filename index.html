@@ -10105,10 +10105,25 @@ function c360MetaHHDireta(d){
   var total=rows.reduce(function(s,r){return s+r.meta},0), nProd=rows.reduce(function(s,r){return s+r.n},0);
   return {rows:rows,total:total,nProd:nProd,ok:rows.length>0};
 }
+// SINCRONIZA a competência do 360 com o filtro de meses do TOPO (SM).
+// Se o mês marcado no topo não tiver lançamentos, cai automaticamente no mês MAIS RECENTE com dados —
+// assim o painel nunca fica preso numa competência vazia (ex.: FEV, default do sistema).
+function c360ResolveComp(){
+  try{
+    var withData={}; ROBO_LANC.forEach(function(l){var m=refInfo(l.ref).mes; if(m)withData[m]=(withData[m]||0)+1;});
+    var hasData=Object.keys(withData).map(Number).sort(function(a,b){return a-b});
+    var sm=[]; try{sm=Array.from(SM);}catch(e){}
+    var want=sm.length?Math.max.apply(null,sm):0;
+    if(!want || withData[want]==null){ want = hasData.length?hasData[hasData.length-1]:want; }
+    if(want && ROBO_UI.compMes!==want){ ROBO_UI.compMes=want; try{roboUISave();}catch(e){} }
+    return {want:want,hasData:hasData};
+  }catch(e){return {want:0,hasData:[]};}
+}
 function c360SetParam(k,v){ROBO_PARAMS[k]=(+v||0);try{lss('cbsi-v15-robo-params',ROBO_PARAMS)}catch(e){}c360Render();}
 function c360ResumoHTML(){
   var P=ROBO_PARAMS, FA, d;
-  try{FA=roboFiltroAtivo(); d=analiseDados(FA);}catch(e){return '<div class="cd" style="margin:8px;text-align:center;color:var(--dm);padding:20px">Sem dados de ponto ainda. Faça o upload/atualização dos espelhos na sub-pasta Espelho de Ponto.</div>';}
+  c360ResolveComp();  // segue o filtro de meses do topo; se vazio, cai no mês mais recente com dados
+  try{FA=roboFiltroAtivo(); d=analiseDados(FA);}catch(e){return '<div class="cd" style="margin:8px;text-align:center;color:var(--dm);padding:20px">Sem dados de ponto ainda. Faça o upload/atualização dos espelhos na sub-pasta Apuração H/H.</div>';}
   var T=d.T, regs=FA.regs||[];
   var pProd=0,pFer=0,pAfa=0,pMob=0,pMan=0,pSem=0;
   Object.keys(d.byC).forEach(function(k){var c=d.byC[k];
@@ -10159,7 +10174,7 @@ function c360ResumoHTML(){
   var atFatHH=metaFatHH>0?Math.round(realHNv/metaFatHH*100):0, corA=atFatHH>=95?'var(--gn)':(atFatHH>=80?'#c9a000':'var(--rd)');
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
    +'<div style="font-size:14px;font-weight:800;color:var(--cs)">🧭 ANÁLISE GERENCIAL — '+((FA&&FA.titulo)||'período')+'</div>'
-   +'<div style="font-size:8px;color:var(--dm);margin-bottom:8px">Faturamento meta × realizado (fonte: Boletim de Medição no Drive) · H/H, equipamentos, horas extras e Pareto de perdas de receita. Mesma base do Efetivo e da Apuração H/H.</div>'
+   +'<div style="font-size:8px;color:var(--dm);margin-bottom:8px">Faturamento meta × realizado (fonte: Boletim de Medição no Drive) · segue o <b>filtro de meses do topo</b> (se o mês não tiver dados, mostra o mais recente com dados). Mesma base do Efetivo e da Apuração H/H.</div>'
    // ---- FATURAMENTO H/H: META × REALIZADO ----
    +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:2px 0 4px">💰 FATURAMENTO H/H — meta × realizado <span style="font-weight:400">(meta = '+(mdir.ok?'conta direta por função: nº × '+capH+'h × preço da função × '+_pc2(100*absFac)+'%':'efetivo × '+capH+'h × valor H/H médio × '+_pc2(100*absFac)+'%')+')</span></div>'
    +'<div class="g" style="grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:4px">'
@@ -10274,6 +10289,8 @@ function c360Setup(){
     // hub como aba ativa inicial
     document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on')}); hub.classList.add('on');
     document.querySelectorAll('.pg').forEach(function(x){x.classList.remove('on')}); pg.classList.add('on');
+    // faz o 360 SEGUIR o filtro de meses do topo: ao trocar o mês, re-renderiza o Resumo 360 na hora
+    ['TM','SA','SC'].forEach(function(fn){try{if(typeof window[fn]==='function'&&!window[fn].__c360){var orig=window[fn];window[fn]=function(){var r=orig.apply(this,arguments);try{var h=document.getElementById('p-c360');if(h&&h.classList.contains('on')&&C360_SUB==='resumo')c360Render();}catch(e){}return r;};window[fn].__c360=1;}}catch(e){}});
     c360Show('resumo');
   }catch(e){console.warn('c360 setup:',e)}
 }
@@ -10281,8 +10298,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=117;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='117 · 10/08/2026 · Análise Gerencial em cadeia: card de Horas Extras (R$) na linha superior + lupa em cada card levando à Apuração H/H · TOTAIS FINANCEIROS (H/H N+E, H/H+Equip, Total geral meta×realizado) · bloco "A HE compensou a deficiência?" (HE faturada × horas perdidas por falta/atestado/sem batida = líquido)';
+var CBSI_VER=118;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='118 · 10/08/2026 · Correção do filtro: a Análise Gerencial 360 agora SEGUE o filtro de meses do topo e, se o mês não tiver dados, cai automaticamente no mês mais recente com dados (não trava mais em FEV vazio). Re-renderiza na hora ao trocar o mês';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
