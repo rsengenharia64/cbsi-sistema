@@ -9503,7 +9503,14 @@ function execHTML(FA,con){
     var clk=link?(' onclick="'+link+'" style="'+base+';cursor:pointer" title="clique para ver o detalhamento e tratar"'):(' style="'+base+'"');
     return '<div class="kp"'+clk+'><div class="kl" style="font-size:11px;letter-spacing:.3px">'+l+(link?' <span style="font-size:10px;color:var(--ca)">🔎</span>':'')+'</div><div class="kv" style="color:'+c+';font-size:32px;font-weight:800;line-height:1.15">'+v+'</div>'+(s?'<div class="ks" style="font-size:9px">'+s+(link?' · <span style="color:var(--ca);font-weight:700">ver ›</span>':'')+'</div>':'')+'</div>';
   }
-  var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
+  var h='<div class="cd" id="roboExecCard" style="border:2px solid var(--cs);margin-bottom:8px">'
+    +'<style>'
+    +'#roboExecCard .kv{font-size:clamp(17px,1.9vw,25px)!important;font-variant-numeric:tabular-nums lining-nums;line-height:1.18;white-space:nowrap}'
+    +'#roboExecCard .kl{font-size:11px!important}#roboExecCard .ks{font-size:9px!important}'
+    +'#roboExecCard .kp{min-height:0!important}'
+    +'@media(max-width:1200px){#roboExecCard .g[style*="repeat(7"]{grid-template-columns:repeat(4,1fr)!important}#roboExecCard .g[style*="repeat(3"]{grid-template-columns:repeat(2,1fr)!important}}'
+    +'@media(max-width:720px){#roboExecCard .g[style*="repeat(7"],#roboExecCard .g[style*="repeat(3"]{grid-template-columns:repeat(2,1fr)!important}}'
+    +'</style>'
     +'<div style="font-size:13px;font-weight:800;color:var(--cs);margin-bottom:6px">📊 VISÃO EXECUTIVA — '+((FA&&FA.titulo)||'período')+' <span style="font-size:8px;font-weight:400;color:var(--dm)">· clique nas caixas com 🔎 para ver quem é e tratar</span></div>'
     // EFETIVO — status único por pessoa (reconcilia: soma das caixinhas = pessoas no período)
     +'<div style="font-size:9px;font-weight:800;color:var(--dm);margin:2px 0 4px">👥 EFETIVO — status único por pessoa (soma reconcilia)</div>'
@@ -10066,7 +10073,7 @@ function efetComportamentalReal(){
 // envelopa o renderEfet base: após ele montar a aba, substitui o painel comportamental pelo real
 if(typeof window.renderEfet==='function'){
   var _origRenderEfet=window.renderEfet;
-  window.renderEfet=function(){var r=_origRenderEfet.apply(this,arguments);try{efetComportamentalReal()}catch(e){console.warn('comportamental real:',e)}try{efetHHReal()}catch(e){console.warn('efetHHReal:',e)}try{fixEfetLive()}catch(e){console.warn('fixEfetLive:',e)}return r;};
+  window.renderEfet=function(){var r=_origRenderEfet.apply(this,arguments);try{efetComportamentalReal()}catch(e){console.warn('comportamental real:',e)}try{efetHHReal()}catch(e){console.warn('efetHHReal:',e)}try{fixEfetLive()}catch(e){console.warn('fixEfetLive:',e)}try{if(C360_SUB==='efet')c360Nav()}catch(e){}return r;};
 }
 // EFETIVO COMPLETO: a lista base vinha do array estático EF (snapshot PONTOS 18-20/Mar/2026) — por isso,
 // ao filtrar Julho, as horas por pessoa e o rótulo "puxavam março". Aqui reconstruímos as colunas
@@ -10244,6 +10251,7 @@ function c360ResumoHTML(){
   var atFatHH=metaFatHH>0?Math.round(realHNv/metaFatHH*100):0, corA=atFatHH>=95?'var(--gn)':(atFatHH>=80?'#c9a000':'var(--rd)');
   var h='<div class="cd" style="border:2px solid var(--cs);margin-bottom:8px">'
    +'<style>'
+   +'#c360-resumo .kv{font-size:clamp(16px,1.7vw,22px)!important;font-variant-numeric:tabular-nums lining-nums;line-height:1.18;white-space:nowrap}'
    +'#c360-resumo .kl{font-size:12.5px!important}'
    +'#c360-resumo .ks{font-size:10px!important;line-height:1.25}'
    +'#c360-resumo table{font-size:11px!important}'
@@ -10349,7 +10357,42 @@ function c360ResumoHTML(){
   return h;
 }
 function _pc2(x){return (Math.round(x*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}
-function c360Render(){var el=document.getElementById('c360-resumo');if(el)el.innerHTML=c360ResumoHTML();}
+function c360Render(){var el=document.getElementById('c360-resumo');if(el){el.innerHTML=c360ResumoHTML();try{c360Nav()}catch(e){}}}
+// ===== NAVEGAÇÃO INTELIGENTE — índice fixo (chips) + recolher/expandir cada card, p/ não rolar a tela igual planilha =====
+function _c360Label(t){return (t||'').replace(/[▾▸]/g,'').replace(/\s+/g,' ').trim().replace(/^[^0-9A-Za-zÀ-ú]+\s*/,'').slice(0,22)||'Seção';}
+function c360Nav(){try{
+  var subMap={resumo:'c360-resumo',bm:'p-bm',efet:'p-efet',ponto:'p-ponto'};
+  var panel=document.getElementById(subMap[C360_SUB]||'c360-resumo'); if(!panel)return;
+  // seções = cards .cd de 1º nível (não aninhados). Cada um vira recolhível.
+  var cards=[].slice.call(panel.querySelectorAll('.cd')).filter(function(c){var p=c.parentNode;return !(p&&p.closest&&p.closest('.cd'))});
+  var secs=[], temRecolher=false;
+  if(cards.length>=2){
+    cards.forEach(function(cd,i){
+      var head=cd.querySelector('.ct')||cd.firstElementChild; if(!head)return;
+      cd.id=cd.id||('c360sec-'+C360_SUB+'-'+i);
+      if(!head.classList.contains('c360head')){head.classList.add('c360head');head.insertAdjacentHTML('afterbegin','<span class="c360car">▾</span> ');head.addEventListener('click',function(ev){if(ev.target.closest('input,select,button,a'))return;cd.classList.toggle('c360collapsed');});}
+      secs.push({id:cd.id,label:_c360Label(head.textContent),collapse:function(v){cd.classList.toggle('c360collapsed',v)}});
+    });
+    temRecolher=true;
+  } else {
+    // Resumo (card único): índice de PULO para as seções internas (já está em 2 colunas)
+    var big=cards[0]||panel;
+    var heads=[].slice.call(big.querySelectorAll('div')).filter(function(d){var s=d.getAttribute('style')||'';return /font-weight:800/.test(s)&&/color:var\(--dm\)/.test(s)&&(d.textContent||'').trim().length>4;});
+    heads.forEach(function(head,i){head.id=head.id||('c360h-'+i);secs.push({id:head.id,label:_c360Label(head.textContent),collapse:null});});
+  }
+  if(secs.length<2){var o=panel.querySelector('.c360nav');if(o)o.remove();return;}
+  var nav=panel.querySelector('.c360nav');
+  if(!nav){nav=document.createElement('div');nav.className='c360nav';panel.insertBefore(nav,panel.firstChild);}
+  nav.innerHTML=(temRecolher?'<span class="c360chip c360act" data-act="expand">⊕ Expandir tudo</span><span class="c360chip c360act" data-act="collapse">⊖ Recolher tudo</span>':'<span class="c360chip" style="cursor:default;background:transparent;border:none;color:var(--dm)">Ir para:</span>')
+    +secs.map(function(s){return '<span class="c360chip" data-go="'+s.id+'">'+s.label+'</span>'}).join('');
+  nav.onclick=function(e){var c=e.target.closest('.c360chip');if(!c)return;
+    var act=c.getAttribute('data-act'),go=c.getAttribute('data-go');
+    if(act==='expand')secs.forEach(function(s){if(s.collapse)s.collapse(false)});
+    else if(act==='collapse')secs.forEach(function(s){if(s.collapse)s.collapse(true)});
+    else if(go){var el=document.getElementById(go);if(el){if(el.classList.contains('cd'))el.classList.remove('c360collapsed');el.scrollIntoView({behavior:'smooth',block:'start'});}}
+  };
+}catch(e){console.warn('c360Nav',e)}}
+window.c360Nav=c360Nav;
 function c360Show(which){
   C360_SUB=which;
   var res=document.getElementById('c360-resumo'); if(res)res.style.display=(which==='resumo')?'block':'none';
@@ -10361,6 +10404,7 @@ function c360Show(which){
     else if(which==='efet'&&typeof renderEfet==='function')renderEfet();
     else if(which==='ponto'&&typeof renderPonto==='function')renderPonto();
   }catch(e){console.warn('c360 show:',e)}
+  setTimeout(function(){try{c360Nav()}catch(e){}},60);
 }
 function c360Setup(){
   try{
@@ -10369,7 +10413,16 @@ function c360Setup(){
     var anyPg=document.querySelector('.pg'); var host=anyPg?anyPg.parentNode:document.body;
     // injeta estilo do sub-nav
     if(!document.getElementById('c360-style')){var stl=document.createElement('style');stl.id='c360-style';
-      stl.textContent='#c360-subnav{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px;border-bottom:2px solid var(--cs);padding-bottom:6px}.c360tab{padding:6px 12px;border-radius:6px 6px 0 0;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--bd);background:var(--c1);color:var(--ch)}.c360tab.on{background:var(--cb);color:#fff;border-color:var(--cb)}';
+      stl.textContent='#c360-subnav{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px;border-bottom:2px solid var(--cs);padding-bottom:6px}.c360tab{padding:6px 12px;border-radius:6px 6px 0 0;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--bd);background:var(--c1);color:var(--ch)}.c360tab.on{background:var(--cb);color:#fff;border-color:var(--cb)}'
+        +'.c360nav{position:sticky;top:0;z-index:60;background:var(--c1);display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:6px 7px;border:1px solid var(--bd);border-radius:9px;margin-bottom:8px;box-shadow:0 2px 7px rgba(0,0,0,.08)}'
+        +'.c360chip{font-size:10px;font-weight:700;padding:4px 9px;border-radius:14px;border:1px solid var(--bd);background:#fff;color:var(--ch);cursor:pointer;white-space:nowrap}'
+        +'.c360chip:hover{background:var(--cb);color:#fff;border-color:var(--cb)}'
+        +'.c360chip.c360act{background:var(--cs);color:#fff;border-color:var(--cs)}'
+        +'.cd.c360collapsed>*:not(.c360head){display:none!important}'
+        +'.cd.c360collapsed{padding-bottom:6px}'
+        +'.c360head{cursor:pointer;user-select:none}'
+        +'.c360car{display:inline-block;width:12px;color:var(--ca);font-size:10px}'
+        +'.cd.c360collapsed .c360car{transform:rotate(-90deg)}';
       document.head.appendChild(stl);}
     // cria a página do hub
     var pg=document.createElement('div'); pg.className='pg'; pg.id='p-c360';
@@ -10400,8 +10453,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=125;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='125 · 11/08/2026 · Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
+var CBSI_VER=126;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='126 · 11/08/2026 · (1) Navegação inteligente: índice fixo (chips) no topo de cada sub-aba do 360 + recolher/expandir cada card (clique no título) — não precisa mais rolar a tela igual planilha. (2) Números proporcionais: no painel executivo e no Resumo os valores usam tamanho responsivo (clamp) + numerais tabulares, ficam do mesmo tamanho e encolhem juntos sem precisar reduzir zoom. Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
