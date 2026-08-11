@@ -10303,7 +10303,7 @@ function c360ResumoHTML(){
    +'</div>'
    +'</div><div class="c360panel">'
    // ---- EQUIPAMENTOS ----
-   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🚜 EQUIPAMENTOS — meta = quantidade arredondada p/ cima (nº real de equipamentos) · gap = glosa por indisponibilidade/manutenção</div>'
+   +'<div style="font-size:10px;font-weight:800;color:var(--dm);margin:6px 0 4px">🚜 EQUIPAMENTOS — glosa por indisponibilidade/manutenção</div>'
    +(eq.rows.length?('<div class="g" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:4px">'
      +kp('Faturado (real)',_brl(eq.realV),'var(--gn)',eq.rows.length+' equipamentos')
      +kp('Meta (arredondada)',_brl(eq.metaV),'var(--cs)','disponibilidade contratada')
@@ -10398,8 +10398,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=123;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='123 · 10/08/2026 · Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
+var CBSI_VER=124;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='124 · 11/08/2026 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
