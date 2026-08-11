@@ -10180,6 +10180,35 @@ function c360MetaHHDireta(d){
   var total=rows.reduce(function(s,r){return s+r.meta},0), nProd=rows.reduce(function(s,r){return s+r.n},0);
   return {rows:rows,total:total,nProd:nProd,ok:rows.length>0};
 }
+// RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO — margem por pessoa (faturamento QQP − custo real) + ponto de equilíbrio.
+// Faturamento/pessoa = 184h × preço QQP da função × (1−absenteísmo)  [mesma base da meta]
+// Custo/pessoa = salário (matrícula > cargo > média) × encargos.  Margem = faturamento − custo.
+// Ponto de equilíbrio (ocupação) = custo ÷ (preço QQP × 184) = % das horas que a pessoa precisa faturar p/ pagar o próprio custo.
+function c360RecomendacaoMO(d){
+  var enc=(+ROBO_PARAMS.custoEncargos>0)?(+ROBO_PARAMS.custoEncargos):1.79;
+  var base=(+ROBO_PARAMS.custoBaseHoras>0)?(+ROBO_PARAMS.custoBaseHoras):184;
+  var absFac=Math.max(0,1-(+ROBO_PARAMS.absenteismo||0)/100), puMed=_c360PuHN(d);
+  function salDe(c){
+    try{var m=(typeof SAL_MAT!=='undefined')?SAL_MAT[String(c.mat||'').trim()]:null;if(m&&m.s)return +m.s;}catch(e){}
+    try{var fn=normTxt(c.cargo||'');if(typeof SAL_FUNC!=='undefined'){var kk=Object.keys(SAL_FUNC).find(function(k){return normTxt(k)===fn});if(kk)return +SAL_FUNC[kk];}}catch(e){}
+    return (typeof SAL_MEDIA!=='undefined')?SAL_MEDIA:0;
+  }
+  var byF={};
+  Object.keys(d.byC).forEach(function(k){var c=d.byC[k];if((c.dias||0)<=0)return;
+    var fbm=ROBO_DEPARA[normTxt(c.cargo||'')]||c.funcQQP||c.func||'';
+    var it=fbm?bmItemDe(fbm,'HN'):null; var pu=it?(+it.pu||0):0;
+    if(!fbm||pu<=0){fbm='Outros (sem função no QQP)';pu=puMed;}
+    var o=byF[fbm]=byF[fbm]||{n:0,pu:pu,sal:0}; o.n++; o.sal+=salDe(c);
+  });
+  var rows=Object.keys(byF).map(function(f){var o=byF[f];
+    var salMed=o.n>0?o.sal/o.n:0, custoPessoa=salMed*enc, fatPessoa=base*o.pu*absFac;
+    var margem=fatPessoa-custoPessoa, margemPct=fatPessoa>0?margem/fatPessoa*100:0;
+    var beHoras=o.pu>0?custoPessoa/o.pu:0, beOcup=base>0?beHoras/base*100:0;
+    return {func:f,n:o.n,pu:o.pu,salMed:salMed,custoPessoa:custoPessoa,fatPessoa:fatPessoa,margem:margem,margemPct:margemPct,beOcup:beOcup};
+  }).sort(function(a,b){return b.margem-a.margem});
+  var T=d.T, absHoras=(+T.faltaH||0)+(+T.atestH||0)+(+T.semBatidaH||0), capPessoa=base*absFac;
+  return {rows:rows,absHoras:absHoras,pessoasAbs:capPessoa>0?absHoras/capPessoa:0,capPessoa:capPessoa};
+}
 // SINCRONIZA a competência do 360 com o filtro de meses do TOPO (SM).
 // Se o mês marcado no topo não tiver lançamentos, cai automaticamente no mês MAIS RECENTE com dados —
 // assim o painel nunca fica preso numa competência vazia (ex.: FEV, default do sistema).
@@ -10348,6 +10377,26 @@ function c360ResumoHTML(){
        +'<div style="font-size:7px;color:var(--dm);margin-bottom:8px">Atestados/Faltas/Sem batida valorizados na hora normal do BM ('+_brl(puHN)+'/h). "Ritmo/medição" = o restante da meta não realizada (produção abaixo de '+capH+'h×'+_pc2(100*absFac)+'% + diferença do que o BM efetivamente mediu). <b>Fora desta conta</b> (não são efetivo produtivo, não entram nos '+_brl(perdaHH)+'): '+pMob+' em mobilização'+(mobDias>0?(' ('+mobDias+' dias)'):'')+', '+pFer+' férias, '+pAfa+' afastados.</div>';
    })()
    +'</div></div>'
+   // ---- RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO ----
+   +'<div style="font-size:11px;font-weight:800;color:var(--cs);margin:10px 0 4px;border-top:2px solid var(--cs);padding-top:8px">👷 RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO <span style="font-weight:400;color:var(--dm)">— vale a pena contratar? (margem por pessoa × ponto de equilíbrio)</span></div>'
+   +(function(){
+     if(!temBM){return '<div style="font-size:9px;color:var(--dm);margin-bottom:8px">Carregue o BM da competência para calcular a margem por função.</div>';}
+     var rec=c360RecomendacaoMO(d), rows=rec.rows, enc=(+ROBO_PARAMS.custoEncargos>0)?(+ROBO_PARAMS.custoEncargos):1.79;
+     function vic(p){return p>=40?'🟢':(p>=20?'🟡':(p>0?'🟠':'🔴'))}
+     function vtx(p){return p>=40?'alta margem — priorizar':(p>=20?'boa margem':(p>0?'margem baixa':'NEGATIVA — não ampliar'))}
+     var top=rows.filter(function(r){return r.margemPct>0}).slice(0,3), neg=rows.filter(function(r){return r.margem<=0});
+     var h='<div style="font-size:8px;color:var(--dm);margin-bottom:6px;border-left:3px solid var(--cs);padding-left:6px"><b>Memorial de cálculo:</b> Faturamento/pessoa = 184h × preço QQP da função × '+_pc2(100*Math.max(0,1-(+ROBO_PARAMS.absenteismo||0)/100))+'% (mesma base da meta). Custo/pessoa = salário (matrícula → cargo → média) × encargos '+enc.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'. Margem/pessoa = faturamento − custo. <b>Ponto de equilíbrio</b> = custo ÷ (preço QQP × 184h) = % das horas que a pessoa precisa faturar só para pagar o próprio custo; abaixo disso dá prejuízo, acima é margem.</div>';
+     h+='<div style="font-size:9px;color:var(--tx);margin-bottom:5px"><b>✅ Onde contratar rende mais</b> (maior margem/pessoa, se houver frente de serviço): '+(top.length?top.map(function(r){return '<b style="color:var(--gn)">'+r.func+'</b> ('+_brl(r.margem)+'/pessoa · '+_pc2(r.margemPct)+'%)'}).join(' · '):'—')+'.'+(neg.length?(' &nbsp;<b style="color:var(--rd)">⛔ Não ampliar:</b> '+neg.map(function(r){return r.func+' ('+_pc2(r.margemPct)+'%)'}).join(', ')+'.'):'')+'</div>';
+     h+='<div style="font-size:9px;color:var(--tx);margin-bottom:6px">📉 O absenteísmo do mês ('+h2hm(rec.absHoras)+') equivale a <b>~'+(Math.round(rec.pessoasAbs*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' pessoas-mês</b> de capacidade faturável perdida. Repor essa reserva nas funções de maior margem recupera faturamento sem inchar o quadro fixo.</div>';
+     h+='<details style="margin-bottom:6px"><summary style="cursor:pointer;font-size:9px;color:var(--cs);font-weight:700">🔎 Ver tabela completa por função ('+rows.length+') — margem, ponto de equilíbrio e veredito</summary>';
+     h+='<div style="max-height:320px;overflow:auto;margin-top:3px"><table style="width:100%;font-size:9px;border-collapse:collapse">';
+     h+='<tr style="position:sticky;top:0;background:var(--c1)"><th style="text-align:left;padding:3px">Função</th><th>Nº</th><th>Preço QQP</th><th>Fatura/pessoa</th><th>Custo/pessoa</th><th>Margem/pessoa</th><th>Margem %</th><th>Equilíbrio (ocup.)</th><th style="text-align:left;padding-left:6px">Veredito</th></tr>';
+     h+=rows.map(function(r){var c=r.margem>0?'var(--gn)':'var(--rd)';return '<tr style="border-bottom:1px solid var(--bd)"><td style="text-align:left">'+r.func+'</td><td style="text-align:center;font-weight:700">'+r.n+'</td><td style="text-align:center">'+_brl(r.pu)+'</td><td style="text-align:center">'+_brl(r.fatPessoa)+'</td><td style="text-align:center;color:var(--dm)">'+_brl(r.custoPessoa)+'</td><td style="text-align:center;font-weight:800;color:'+c+'">'+_brl(r.margem)+'</td><td style="text-align:center;color:'+c+'">'+_pc2(r.margemPct)+'%</td><td style="text-align:center;color:var(--dm)">'+_pc2(r.beOcup)+'%</td><td style="text-align:left;padding-left:6px">'+vic(r.margemPct)+' '+vtx(r.margemPct)+'</td></tr>'}).join('');
+     h+='</table></div>';
+     h+='<div style="font-size:7px;color:var(--dm);margin-top:3px">⚠️ Contratar só recupera faturamento se houver <b>frente de serviço/demanda aprovada</b> para faturar as horas — a margem mostra o potencial por pessoa, não a demanda. "Equilíbrio (ocup.)" = % das 184h que a pessoa precisa faturar para pagar o custo; o restante vira margem. Custo por salário real (matrícula/cargo) × encargos '+enc.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'.</div>';
+     h+='</details>';
+     return h;
+   })()
    // ---- LEITURA GERENCIAL ----
    +'<div style="font-size:9px;color:var(--dm);border-top:1px dashed var(--bd);padding-top:6px">🧭 <b>Leitura gerencial:</b> '
    +(temBM?('faturamento H/H em <b style="color:'+corA+'">'+atFatHH+'%</b> da meta ('+_brl(realHNv)+' de '+_brl(metaFatHH)+' — perda de '+_brl(perdaHH)+'). Glosa de equipamento '+_brl(eq.glosaV)+'. '):'carregue o BM da competência para ver os valores em R$. ')
@@ -10453,8 +10502,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=126;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='126 · 11/08/2026 · (1) Navegação inteligente: índice fixo (chips) no topo de cada sub-aba do 360 + recolher/expandir cada card (clique no título) — não precisa mais rolar a tela igual planilha. (2) Números proporcionais: no painel executivo e no Resumo os valores usam tamanho responsivo (clamp) + numerais tabulares, ficam do mesmo tamanho e encolhem juntos sem precisar reduzir zoom. Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
+var CBSI_VER=127;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='127 · 11/08/2026 · RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO: margem por pessoa (faturamento QQP − custo real por salário×encargos), ponto de equilíbrio de ocupação e veredito por função (ranqueado pela margem); absenteísmo convertido em pessoas-mês equivalentes. Anterior 126 · (1) Navegação inteligente: índice fixo (chips) no topo de cada sub-aba do 360 + recolher/expandir cada card (clique no título) — não precisa mais rolar a tela igual planilha. (2) Números proporcionais: no painel executivo e no Resumo os valores usam tamanho responsivo (clamp) + numerais tabulares, ficam do mesmo tamanho e encolhem juntos sem precisar reduzir zoom. Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
