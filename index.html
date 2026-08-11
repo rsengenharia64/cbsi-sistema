@@ -7109,7 +7109,14 @@ function fixPlanPeriodo(){
 // real dos meses selecionados, troca o conteúdo de EF temporariamente, deixa o renderRank base montar tudo
 // (podium, scores, top10) e restaura o EF. Fallback: sem espelho importado → mantém o cadastro original.
 function _rankMes(s){s=String(s||'');var p=s.split('/');if(p.length>=2){var m=parseInt(p[1]);if(m>=1&&m<=12)return m}var q=s.split('-');if(q.length>=2){var m2=parseInt(q[1]);if(m2>=1&&m2<=12)return m2}return 0}
-function _rankMesesSel(){try{var sm=(typeof SM!=='undefined')?Array.from(SM):[];if(!sm.length||sm.length>=12)return null;return sm}catch(e){return null}}
+function _rankMesesSel(){try{
+  var sm=(typeof SM!=='undefined')?Array.from(SM):[];
+  var withData={};try{ROBO_LANC.forEach(function(l){var m=_rankMes(l.data);if(m)withData[m]=1;});}catch(e){}
+  var has=Object.keys(withData).map(Number).sort(function(a,b){return a-b});
+  if(sm.length&&sm.length<12){var inter=sm.filter(function(m){return withData[m]});if(inter.length)return inter;return has.length?[has[has.length-1]]:sm;}
+  // nada (ou tudo) selecionado → mês MAIS RECENTE com dados (mesma regra do Central 360; não agrega todos os meses)
+  return has.length?[has[has.length-1]]:null;
+}catch(e){return null}}
 function buildRankEF(){
   try{
     if(typeof ROBO_LANC==='undefined'||!ROBO_LANC.length)return null;
@@ -10416,7 +10423,7 @@ function c360Render(){var el=document.getElementById('c360-resumo');if(el){el.in
 // ===== NAVEGAÇÃO INTELIGENTE — índice fixo (chips) + recolher/expandir cada card, p/ não rolar a tela igual planilha =====
 function _c360Label(t){return (t||'').replace(/[▾▸]/g,'').replace(/\s+/g,' ').trim().replace(/^[^0-9A-Za-zÀ-ú]+\s*/,'').slice(0,22)||'Seção';}
 function c360Nav(){try{
-  var subMap={resumo:'c360-resumo',bm:'p-bm',efet:'p-efet',ponto:'p-ponto'};
+  var subMap={resumo:'c360-resumo',bm:'p-bm',efet:'p-efet',ponto:'p-ponto',rank:'p-rank'};
   var panel=document.getElementById(subMap[C360_SUB]||'c360-resumo'); if(!panel)return;
   // seções = cards .cd de 1º nível (não aninhados). Cada um vira recolhível.
   var cards=[].slice.call(panel.querySelectorAll('.cd')).filter(function(c){var p=c.parentNode;return !(p&&p.closest&&p.closest('.cd'))});
@@ -10452,13 +10459,14 @@ if(!window.__c360esc){window.__c360esc=1;try{document.addEventListener('keydown'
 function c360Show(which){
   C360_SUB=which;
   var res=document.getElementById('c360-resumo'); if(res)res.style.display=(which==='resumo')?'block':'none';
-  ['bm','efet','ponto'].forEach(function(id){var n=document.getElementById('p-'+id);if(n)n.classList.toggle('on',which===id);});
+  ['bm','efet','ponto','rank'].forEach(function(id){var n=document.getElementById('p-'+id);if(n)n.classList.toggle('on',which===id);});
   try{Array.prototype.forEach.call(document.querySelectorAll('#c360-subnav .c360tab'),function(b){b.classList.toggle('on',b.getAttribute('data-s')===which);});}catch(e){}
   try{
     if(which==='resumo')c360Render();
     else if(which==='bm'&&typeof renderBM==='function')renderBM();
     else if(which==='efet'&&typeof renderEfet==='function')renderEfet();
     else if(which==='ponto'&&typeof renderPonto==='function')renderPonto();
+    else if(which==='rank'){try{c360ResolveComp()}catch(e){} if(typeof renderRank==='function')renderRank();}
   }catch(e){console.warn('c360 show:',e)}
   setTimeout(function(){try{c360Nav()}catch(e){}},60);
 }
@@ -10490,14 +10498,14 @@ function c360Setup(){
     host.insertBefore(pg, host.firstChild);
     // move as 3 páginas para dentro do hub
     var body=document.getElementById('c360-body');
-    ['bm','efet','ponto'].forEach(function(id){var n=document.getElementById('p-'+id);if(n)body.appendChild(n);});
+    ['bm','efet','ponto','rank'].forEach(function(id){var n=document.getElementById('p-'+id);if(n)body.appendChild(n);});
     // botão do hub como PRIMEIRO no topo (o handler base já cuida do toggle por id p-c360)
     var hub=document.createElement('div'); hub.className='tab'; hub.setAttribute('data-p','c360'); hub.textContent='🎯 CENTRAL PERFORMANCE 360°';
     tabs.insertBefore(hub, tabs.firstChild);
     // remove os botões de topo das 3 abas (viram sub-pastas)
-    ['bm','efet','ponto'].forEach(function(id){var b=tabs.querySelector('.tab[data-p="'+id+'"]');if(b)b.remove();});
+    ['bm','efet','ponto','rank'].forEach(function(id){var b=tabs.querySelector('.tab[data-p="'+id+'"]');if(b)b.remove();});
     // sub-nav do hub
-    var subs=[['resumo','📊 Resumo 360'],['bm','📋 Boletim Medição'],['efet','👥 Efetivo'],['ponto','⏱ Apuração H/H']];
+    var subs=[['resumo','📊 Resumo 360'],['bm','📋 Boletim Medição'],['efet','👥 Efetivo'],['ponto','⏱ Apuração H/H'],['rank','🏆 Ranking']];
     document.getElementById('c360-subnav').innerHTML=subs.map(function(s){return '<div class="c360tab" data-s="'+s[0]+'" onclick="c360Show(\''+s[0]+'\')">'+s[1]+'</div>'}).join('');
     // ao (re)abrir o hub, reaplica o sub-estado
     tabs.addEventListener('click',function(e){var t=e.target.closest('.tab');if(t&&t.getAttribute('data-p')==='c360'){setTimeout(function(){c360Show(C360_SUB||'resumo')},0);}});
@@ -10513,8 +10521,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=128;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='128 · 11/08/2026 · (1) Indicadores Comportamentais SINCRONIZADOS: faltas e atestados agora vêm da mesma base do Painel Executivo (apuração real) na competência do filtro — não zeram mais enquanto o executivo mostra faltas; classificações manuais entram automaticamente e alimentam a Lista para Tratativa. (2) Tela cheia por card: cada card do 360 tem ⛶ para expandir em tela cheia (Esc fecha) — analisa sem zoom nem barra de rolagem interna. Anterior 127 · RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO: margem por pessoa (faturamento QQP − custo real por salário×encargos), ponto de equilíbrio de ocupação e veredito por função (ranqueado pela margem); absenteísmo convertido em pessoas-mês equivalentes. Anterior 126 · (1) Navegação inteligente: índice fixo (chips) no topo de cada sub-aba do 360 + recolher/expandir cada card (clique no título) — não precisa mais rolar a tela igual planilha. (2) Números proporcionais: no painel executivo e no Resumo os valores usam tamanho responsivo (clamp) + numerais tabulares, ficam do mesmo tamanho e encolhem juntos sem precisar reduzir zoom. Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
+var CBSI_VER=129;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='129 · 11/08/2026 · (1) Aba RANKING entrou no Central Performance 360 como sub-pasta (saiu do topo); segue o filtro de meses e usa a MESMA competência das demais abas (se o mês selecionado não tem dados, cai no mais recente com dados — não agrega meses indevidamente). (2) Atestados: confirmado que o número é a mesma fonte do Executivo (conta observações "ATESTADO" do ponto) — 0 significa que não há atestado apontado na competência, coerente com todas as abas. Anterior 128 · (1) Indicadores Comportamentais SINCRONIZADOS: faltas e atestados agora vêm da mesma base do Painel Executivo (apuração real) na competência do filtro — não zeram mais enquanto o executivo mostra faltas; classificações manuais entram automaticamente e alimentam a Lista para Tratativa. (2) Tela cheia por card: cada card do 360 tem ⛶ para expandir em tela cheia (Esc fecha) — analisa sem zoom nem barra de rolagem interna. Anterior 127 · RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO: margem por pessoa (faturamento QQP − custo real por salário×encargos), ponto de equilíbrio de ocupação e veredito por função (ranqueado pela margem); absenteísmo convertido em pessoas-mês equivalentes. Anterior 126 · (1) Navegação inteligente: índice fixo (chips) no topo de cada sub-aba do 360 + recolher/expandir cada card (clique no título) — não precisa mais rolar a tela igual planilha. (2) Números proporcionais: no painel executivo e no Resumo os valores usam tamanho responsivo (clamp) + numerais tabulares, ficam do mesmo tamanho e encolhem juntos sem precisar reduzir zoom. Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
