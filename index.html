@@ -10021,23 +10021,29 @@ function efetComportamentalReal(){
   var host=document.getElementById('p-efet');if(!host)return;
   var card=[].slice.call(host.querySelectorAll('.cd')).find(function(c){var t=c.querySelector('.ct');return t&&/Indicadores Comportamentais/i.test(t.textContent||'')});
   if(!card)return;
-  var meses=(function(){try{return aggSelMeses().meses}catch(e){return[]}})();
   var temPonto=(typeof ROBO_LANC!=='undefined'&&ROBO_LANC.length>0);
-  var abs=roboAbsReais(meses);
   var EFL=(typeof EF!=='undefined'&&EF)?EF:[];
   var DCx=(typeof DC!=='undefined')?DC:{};
-  var MN=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  var per=(meses&&meses.length&&meses.length<12)?('período '+meses.map(function(m){return MN[m-1]}).join('+')):'todo o ponto importado';
+  // SINCRONIZA com o painel executivo: faltas/atestados vêm do MESMO analiseDados (byC) na MESMA competência do filtro do topo
+  // (antes vinha de aggSelMeses + texto da Observação, o que zerava enquanto o executivo mostrava 14 faltas — quebra de coerência).
+  try{c360ResolveComp();}catch(e){}
+  var FA=roboFiltroAtivo(), dd=analiseDados(FA), regs=(FA&&FA.regs)||[];
+  var per=(FA&&FA.compMesEff)?(MESES_NOMES[FA.compMesEff]+'/'+(FA.compAnoEff||'')):'período';
+  var byMat={}, byNome={};
+  Object.keys(dd.byC).forEach(function(k){var c=dd.byC[k];var mk=String(c.mat||'').replace(/\D/g,'');if(mk)byMat[mk]=c;var nk=normTxt(c.nome||'');if(nk)byNome[nk]=c;});
+  var extra={};
+  regs.forEach(function(l){var o=normTxt(l.obs||'');var atr=/ATRASO/.test(o)?1:0,sd=/SAIDA/.test(o)?1:0;if(!atr&&!sd)return;var mk=String(l.mat||'').replace(/\D/g,''),nk=normTxt(l.nome||'');if(mk){var a=extra['m'+mk]=extra['m'+mk]||{atrasos:0,saidas:0};a.atrasos+=atr;a.saidas+=sd;}if(nk){var b=extra['n'+nk]=extra['n'+nk]||{atrasos:0,saidas:0};b.atrasos+=atr;b.saidas+=sd;}});
   function kp(l,v,s,c){return '<div class="kp" style="border-top:2px solid '+c+'"><div class="kl">'+l+'</div><div class="kv" style="color:'+c+'">'+v+'</div><div class="ks">'+s+'</div></div>';}
   var h='<button class="fs-btn" onclick="toggleFullscreen(this)"></button>'
     +'<div class="ct" style="color:var(--ca)">📊 Indicadores Comportamentais — Absenteísmo e Pontualidade <span style="font-size:8px;font-weight:400;color:var(--dm)">· fonte: espelho de ponto real ('+per+')</span></div>'
-    +'<div style="font-size:8px;color:var(--dm);margin-bottom:6px">Score: 100 base − Atestados(×15) − Atrasos(×10) − Saídas antecipadas(×8) − Faltas(×20). Ocorrências reais das Observações do ponto (não estimadas).</div>';
+    +'<div style="font-size:8px;color:var(--dm);margin-bottom:6px">Score: 100 base − Atestados(×15) − Atrasos(×10) − Saídas antecipadas(×8) − Faltas(×20). <b>Faltas e atestados = mesma base do Painel Executivo</b> (apuração real da competência); atrasos e saídas vêm das Observações do ponto. Ajustes/classificações manuais entram automaticamente.</div>';
   if(!temPonto){
     h+='<div style="background:rgba(255,173,0,.12);border:1px solid var(--ca);border-radius:6px;padding:10px;font-size:10px;color:var(--tx);line-height:1.5">⚠️ <b>Sem espelho de ponto importado neste período.</b><br>Os indicadores comportamentais só aparecem com o ponto real carregado (aba <b>Espelho Ponto</b> ou robô do Drive). Enquanto não houver ponto, não exibimos número estimado — evita marcar colaborador com dado que não é real.</div>';
     card.innerHTML=h;return;
   }
   var data=EFL.map(function(e){
-    var a=abs[normTxt(e.n||'')]||{atestados:0,atrasos:0,saidasCedo:0,faltas:0};
+    var mk=String(e.m||'').replace(/\D/g,''); var c=(mk&&byMat[mk])||byNome[normTxt(e.n||'')]||{}; var ex=(mk&&extra['m'+mk])||extra['n'+normTxt(e.n||'')]||{atrasos:0,saidas:0};
+    var a={atestados:(+c.atestado||0),faltas:(+c.falta||0),atrasos:ex.atrasos,saidasCedo:ex.saidas};
     var score=Math.max(0,100-a.atestados*15-a.atrasos*10-a.saidasCedo*8-a.faltas*20);
     return {n:e.n,d:e.d,f:e.f,atestados:a.atestados,atrasos:a.atrasos,saidasCedo:a.saidasCedo,faltas:a.faltas,score:score};
   });
@@ -10419,7 +10425,7 @@ function c360Nav(){try{
     cards.forEach(function(cd,i){
       var head=cd.querySelector('.ct')||cd.firstElementChild; if(!head)return;
       cd.id=cd.id||('c360sec-'+C360_SUB+'-'+i);
-      if(!head.classList.contains('c360head')){head.classList.add('c360head');head.insertAdjacentHTML('afterbegin','<span class="c360car">▾</span> ');head.addEventListener('click',function(ev){if(ev.target.closest('input,select,button,a'))return;cd.classList.toggle('c360collapsed');});}
+      if(!head.classList.contains('c360head')){head.classList.add('c360head');head.insertAdjacentHTML('afterbegin','<span class="c360car">▾</span> ');head.insertAdjacentHTML('beforeend','<span class="c360fs" title="expandir em tela cheia (Esc fecha)">⛶</span>');head.addEventListener('click',function(ev){if(ev.target.closest('input,select,button,a,.c360fs'))return;cd.classList.toggle('c360collapsed');});var _fsb=head.querySelector('.c360fs');if(_fsb)_fsb.addEventListener('click',function(ev){ev.stopPropagation();cd.classList.remove('c360collapsed');cd.classList.toggle('c360full');});}
       secs.push({id:cd.id,label:_c360Label(head.textContent),collapse:function(v){cd.classList.toggle('c360collapsed',v)}});
     });
     temRecolher=true;
@@ -10442,6 +10448,7 @@ function c360Nav(){try{
   };
 }catch(e){console.warn('c360Nav',e)}}
 window.c360Nav=c360Nav;
+if(!window.__c360esc){window.__c360esc=1;try{document.addEventListener('keydown',function(e){if(e.key==='Escape'){var f=document.querySelector('.cd.c360full');if(f)f.classList.remove('c360full');}});}catch(e){}}
 function c360Show(which){
   C360_SUB=which;
   var res=document.getElementById('c360-resumo'); if(res)res.style.display=(which==='resumo')?'block':'none';
@@ -10471,7 +10478,11 @@ function c360Setup(){
         +'.cd.c360collapsed{padding-bottom:6px}'
         +'.c360head{cursor:pointer;user-select:none}'
         +'.c360car{display:inline-block;width:12px;color:var(--ca);font-size:10px}'
-        +'.cd.c360collapsed .c360car{transform:rotate(-90deg)}';
+        +'.cd.c360collapsed .c360car{transform:rotate(-90deg)}'
+        +'.c360fs{float:right;cursor:pointer;font-size:12px;color:var(--ca);padding:0 2px;font-weight:400}'
+        +'.cd.c360full{position:fixed!important;inset:14px!important;z-index:9999!important;overflow:auto!important;margin:0!important;box-shadow:0 0 0 9999px rgba(0,0,0,.55)!important;max-height:none!important}'
+        +'.cd.c360full [style*="max-height"]{max-height:none!important}'
+        +'.cd.c360full .c360fs::after{content:\" fechar ✕\";font-size:9px}';
       document.head.appendChild(stl);}
     // cria a página do hub
     var pg=document.createElement('div'); pg.className='pg'; pg.id='p-c360';
@@ -10502,8 +10513,8 @@ window.c360Show=c360Show; window.c360SetParam=c360SetParam; window.c360Render=c3
 setTimeout(function(){try{c360Setup()}catch(e){console.warn(e)}},400);
 
 // ---- VERSÃO + AUTO-ATUALIZAÇÃO — toda máquina pega a última versão sozinha (resolve cache entre máquinas) ----
-var CBSI_VER=127;                         // número do build (incrementar a cada deploy)
-var CBSI_BUILD='127 · 11/08/2026 · RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO: margem por pessoa (faturamento QQP − custo real por salário×encargos), ponto de equilíbrio de ocupação e veredito por função (ranqueado pela margem); absenteísmo convertido em pessoas-mês equivalentes. Anterior 126 · (1) Navegação inteligente: índice fixo (chips) no topo de cada sub-aba do 360 + recolher/expandir cada card (clique no título) — não precisa mais rolar a tela igual planilha. (2) Números proporcionais: no painel executivo e no Resumo os valores usam tamanho responsivo (clamp) + numerais tabulares, ficam do mesmo tamanho e encolhem juntos sem precisar reduzir zoom. Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
+var CBSI_VER=128;                         // número do build (incrementar a cada deploy)
+var CBSI_BUILD='128 · 11/08/2026 · (1) Indicadores Comportamentais SINCRONIZADOS: faltas e atestados agora vêm da mesma base do Painel Executivo (apuração real) na competência do filtro — não zeram mais enquanto o executivo mostra faltas; classificações manuais entram automaticamente e alimentam a Lista para Tratativa. (2) Tela cheia por card: cada card do 360 tem ⛶ para expandir em tela cheia (Esc fecha) — analisa sem zoom nem barra de rolagem interna. Anterior 127 · RECOMENDAÇÃO DE MÃO DE OBRA POR FUNÇÃO: margem por pessoa (faturamento QQP − custo real por salário×encargos), ponto de equilíbrio de ocupação e veredito por função (ranqueado pela margem); absenteísmo convertido em pessoas-mês equivalentes. Anterior 126 · (1) Navegação inteligente: índice fixo (chips) no topo de cada sub-aba do 360 + recolher/expandir cada card (clique no título) — não precisa mais rolar a tela igual planilha. (2) Números proporcionais: no painel executivo e no Resumo os valores usam tamanho responsivo (clamp) + numerais tabulares, ficam do mesmo tamanho e encolhem juntos sem precisar reduzir zoom. Descritivos de coerência: (a) "Perda H/H" (total) e "Deficiência de horas" agora explicam que a deficiência (absenteísmo) é uma FATIA da perda total — o resto é ritmo/produção; (b) Totais Financeiros ganharam a linha "o que compõe a Meta total" (H/H normal + HE + Equipamentos + serviços) e o "Falta" = Perda H/H + glosa. Sem mudança de número. Anterior 124 · Limpeza: removido o texto de instrução "meta = quantidade arredondada p/ cima" do título de Equipamentos (era só explicação). Rodapé enxuto: mostra só "CBSI build 123" (o changelog completo agora fica no tooltip, ao passar o mouse) — sem mais aquele texto gigante ocupando a tela. Layout da Análise Gerencial: fontes maiores (labels/tabelas/títulos) e as seções de baixo (HE compensou, Meta HE, Equipamentos, Pareto+Detalhe) distribuídas em 2 colunas — cabe na tela sem zoom e fica mais fácil de ler. Nenhum número mudou. Builds anteriores: 122 · (1) Meta faturamento H/H fecha com o "produzindo" (todo produtivo é contabilizado; função sem preço no QQP entra a preço-hora médio do BM em "Outros"). (2) PARETO detalhado: a "Perda de faturamento H/H" agora abre por causa — Atestados, Faltas, Sem batida e Ritmo/medição — com R$ e % de cada; mobilização/férias/afastados ficam de fora (não são efetivo produtivo). (3) Card "HE paga CBSI × cliente / Distorção" ocultado da Análise Gerencial (fica na Apuração H/H). (4) Efetivo Completo: horas por pessoa e rótulo agora seguem a competência do filtro (não puxa mais o snapshot de março).';
 window.CBSI_VER=CBSI_VER;window.CBSI_BUILD=CBSI_BUILD;
 function bmBuildBadge(cor,txt){try{
   var id='cbsiBuildBadge',e=document.getElementById(id);
