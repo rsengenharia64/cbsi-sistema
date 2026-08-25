@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>CBSI · Acesso Seguro (Vale ES)</title>
+<style>
+  :root{--c1:#fff;--bg:#eef2f6;--cs:#00437a;--cb:#006aa6;--tx:#12222e;--dm:#6b7c88;--bd:#d7e0e8;--gn:#0f9d6b;--rd:#e5384a;--co:#e07b39}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--tx)}
+  .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:var(--c1);border:1px solid var(--bd);border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.08);width:100%;max-width:420px;padding:26px 24px}
+  .logo{display:flex;flex-direction:column;align-items:center;margin-bottom:14px}
+  .dm{width:46px;height:46px;position:relative;margin-bottom:8px}
+  .dm:before,.dm:after{content:"";position:absolute;left:50%;top:50%;width:30px;height:30px;transform:translate(-50%,-50%) rotate(45deg);border-radius:6px}
+  .dm:before{background:var(--cs)}.dm:after{width:22px;height:22px;background:var(--co);opacity:.85}
+  h1{font-size:16px;font-weight:800;color:var(--cs);margin:0;text-align:center;letter-spacing:.3px}
+  .sub{font-size:11px;color:var(--dm);text-align:center;margin-top:2px}
+  label{font-size:11px;font-weight:700;color:var(--dm);display:block;margin:12px 0 4px}
+  input{width:100%;font-size:14px;padding:10px 12px;border:1px solid var(--bd);border-radius:9px;background:#fbfdff;color:var(--tx)}
+  input:focus{outline:none;border-color:var(--cb)}
+  .btn{width:100%;font-size:14px;font-weight:700;padding:11px;border:none;border-radius:9px;background:var(--cs);color:#fff;cursor:pointer;margin-top:14px}
+  .btn:hover{background:var(--cb)}
+  .btn.sec{background:transparent;color:var(--cb);border:1px solid var(--cb);margin-top:8px}
+  .msg{font-size:12px;border-radius:8px;padding:9px 11px;margin-top:12px;display:none}
+  .msg.err{background:#fdecee;color:var(--rd);border:1px solid #f4b9c0;display:block}
+  .msg.ok{background:#e9f8f1;color:var(--gn);border:1px solid #b3e6d1;display:block}
+  .msg.info{background:#eaf3fb;color:var(--cb);border:1px solid #bcd9f0;display:block}
+  .foot{font-size:9.5px;color:var(--dm);text-align:center;margin-top:16px;line-height:1.5}
+  .hide{display:none!important}
+  .kpi{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .kp{flex:1;min-width:90px;background:#f4f8fb;border:1px solid var(--bd);border-radius:10px;padding:9px 10px}
+  .kp .l{font-size:9px;color:var(--dm);font-weight:700}
+  .kp .v{font-size:18px;font-weight:900;color:var(--cs)}
+  .who{background:#f4f8fb;border:1px solid var(--bd);border-radius:10px;padding:10px 12px;font-size:12px;margin-top:6px}
+  .who b{color:var(--cs)}
+  .badge{display:inline-block;font-size:9px;font-weight:800;padding:2px 8px;border-radius:20px;background:var(--gn);color:#fff;margin-left:6px}
+  a{color:var(--cb)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="logo"><div class="dm"></div>
+      <h1>GESTÃO OPERACIONAL — ACESSO SEGURO</h1>
+      <div class="sub">CBSI · Vale ES · Porto de Tubarão — versão segura (Supabase)</div>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="loginBox">
+      <label>E-mail</label>
+      <input id="email" type="email" autocomplete="username" placeholder="voce@empresa.com">
+      <label>Senha</label>
+      <input id="senha" type="password" autocomplete="current-password" placeholder="sua senha">
+      <button class="btn" id="btnEntrar">Entrar</button>
+      <button class="btn sec" id="btnPrimeiro">Primeiro acesso — definir senha</button>
+      <button class="btn sec" id="btnReset" style="border:none;color:var(--dm)">Esqueci a senha</button>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <!-- LOGADO -->
+    <div id="appBox" class="hide">
+      <div class="msg ok" style="display:block">✅ Login seguro funcionando — dados isolados por empresa (RLS no banco).</div>
+      <div class="who">Logado como <b id="uEmail"></b><br>Empresa: <b id="uOrg"></b><span class="badge" id="uPapel"></span></div>
+      <div class="kpi">
+        <div class="kp"><div class="l">EFETIVOS</div><div class="v" id="cEfet">—</div></div>
+        <div class="kp"><div class="l">LANÇAMENTOS</div><div class="v" id="cLanc">—</div></div>
+        <div class="kp"><div class="l">PRODUÇÃO (linhas)</div><div class="v" id="cProd">—</div></div>
+      </div>
+      <div class="msg info" style="display:block;margin-top:10px">Esta é a base da versão nova. O próximo passo é migrar os cards do sistema atual para ler/gravar aqui. Enquanto isso, o sistema atual continua funcionando normalmente.</div>
+      <button class="btn sec" id="btnSair">Sair</button>
+    </div>
+
+    <div class="foot">
+      Segurança no banco (RLS): cada empresa só enxerga o próprio dado. A chave abaixo é pública por design — quem protege é a regra do banco.<br>
+      <span id="verInfo"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  var URL="https://kdqptcbbelnmdkeaqlfx.supabase.co";
+  var ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkcXB0Y2JiZWxubWRrZWFxbGZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NDE5MDYsImV4cCI6MjEwMTExNzkwNn0.QLkBiZoXbF0Oi1-PBvMtF_G0ayxzxodTs9zENqWgD4E";
+  var sb = window.supabase.createClient(URL, ANON);
+  var $=function(id){return document.getElementById(id)};
+  document.getElementById('verInfo').textContent='CBSI · build seguro 1 · '+URL.replace('https://','');
+
+  function msg(t,cls){var m=$('msg');m.className='msg '+cls;m.textContent=t;m.style.display='block';}
+  function creds(){return {email:($('email').value||'').trim(), password:$('senha').value||''};}
+
+  async function mostrarApp(){
+    $('loginBox').classList.add('hide'); $('appBox').classList.remove('hide');
+    var u=(await sb.auth.getUser()).data.user; $('uEmail').textContent=u?u.email:'—';
+    // organizacao (RLS devolve só a do usuário)
+    var org=await sb.from('organizacao').select('nome,contrato').limit(1);
+    var on=(org.data&&org.data[0])?(org.data[0].nome+' · contrato '+(org.data[0].contrato||'')):'(sem vínculo — peça ao admin p/ te adicionar)';
+    $('uOrg').textContent=on;
+    // papel
+    var mem=await sb.from('membros').select('papel').eq('user_id',u.id).limit(1);
+    $('uPapel').textContent=(mem.data&&mem.data[0])?mem.data[0].papel:'sem papel';
+    // contagens (provam a leitura via RLS)
+    async function cont(tab){try{var r=await sb.from(tab).select('*',{count:'exact',head:true});return r.count==null?'0':String(r.count);}catch(e){return '—';}}
+    $('cEfet').textContent=await cont('efetivos');
+    $('cLanc').textContent=await cont('lancamentos_ponto');
+    $('cProd').textContent=await cont('pintura_mensal');
+  }
+
+  $('btnEntrar').onclick=async function(){
+    var c=creds(); if(!c.email||!c.password){return msg('Informe e-mail e senha.','err');}
+    msg('Entrando…','info');
+    var {error}=await sb.auth.signInWithPassword(c);
+    if(error){return msg('Não foi possível entrar: '+error.message,'err');}
+    mostrarApp();
+  };
+  $('btnPrimeiro').onclick=async function(){
+    var c=creds(); if(!c.email||!c.password){return msg('Informe seu e-mail e crie uma senha (mín. 6).','err');}
+    if(c.password.length<6){return msg('A senha precisa ter ao menos 6 caracteres.','err');}
+    msg('Criando acesso…','info');
+    var {data,error}=await sb.auth.signUp(c);
+    if(error){return msg('Erro no primeiro acesso: '+error.message,'err');}
+    if(data && data.session){ mostrarApp(); }
+    else { msg('Cadastro criado. Se pedir confirmação por e-mail, confirme e depois clique em Entrar.','ok'); }
+  };
+  $('btnReset').onclick=async function(){
+    var c=creds(); if(!c.email){return msg('Informe seu e-mail para receber o link de redefinição.','err');}
+    var {error}=await sb.auth.resetPasswordForEmail(c.email);
+    if(error){return msg('Erro: '+error.message,'err');}
+    msg('Se o e-mail existir, enviamos um link para redefinir a senha.','ok');
+  };
+  $('btnSair').onclick=async function(){ await sb.auth.signOut(); $('appBox').classList.add('hide'); $('loginBox').classList.remove('hide'); msg('Sessão encerrada.','info'); };
+
+  // sessão persistente
+  sb.auth.getSession().then(function(r){ if(r.data.session){ mostrarApp(); } });
+})();
+</script>
+</body>
+</html>
