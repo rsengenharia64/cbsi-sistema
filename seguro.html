@@ -86,7 +86,7 @@
   var ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkcXB0Y2JiZWxubWRrZWFxbGZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1NDE5MDYsImV4cCI6MjEwMTExNzkwNn0.QLkBiZoXbF0Oi1-PBvMtF_G0ayxzxodTs9zENqWgD4E";
   var sb = window.supabase.createClient(URL, ANON);
   var $=function(id){return document.getElementById(id)};
-  document.getElementById('verInfo').textContent='CBSI · build seguro 1 · '+URL.replace('https://','');
+  document.getElementById('verInfo').textContent='CBSI · build seguro 2 · '+URL.replace('https://','');
 
   function msg(t,cls){var m=$('msg');m.className='msg '+cls;m.textContent=t;m.style.display='block';}
   function creds(){return {email:($('email').value||'').trim(), password:$('senha').value||''};}
@@ -119,10 +119,19 @@
     var c=creds(); if(!c.email||!c.password){return msg('Informe seu e-mail e crie uma senha (mín. 6).','err');}
     if(c.password.length<6){return msg('A senha precisa ter ao menos 6 caracteres.','err');}
     msg('Criando acesso…','info');
-    var {data,error}=await sb.auth.signUp(c);
-    if(error){return msg('Erro no primeiro acesso: '+error.message,'err');}
-    if(data && data.session){ mostrarApp(); }
-    else { msg('Cadastro criado. Se pedir confirmação por e-mail, confirme e depois clique em Entrar.','ok'); }
+    try{
+      var resp=await fetch(URL+'/functions/v1/criar-acesso',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':ANON,'Authorization':'Bearer '+ANON},
+        body:JSON.stringify({email:c.email,password:c.password})
+      });
+      var j={}; try{j=await resp.json();}catch(e){}
+      if(!resp.ok){ return msg(j.error||'Não foi possível criar o acesso.','err'); }
+      // conta já criada e confirmada → entra direto
+      var r=await sb.auth.signInWithPassword(c);
+      if(r.error){return msg('Conta criada, mas o login falhou: '+r.error.message+' — clique em Entrar.','err');}
+      mostrarApp();
+    }catch(e){ msg('Erro ao criar acesso: '+e,'err'); }
   };
   $('btnReset').onclick=async function(){
     var c=creds(); if(!c.email){return msg('Informe seu e-mail para receber o link de redefinição.','err');}
